@@ -35,6 +35,8 @@ app.config.update(
     SESSION_COOKIE_SAMESITE="Lax",
     SESSION_COOKIE_SECURE=os.environ.get("HTTPS_ENABLED", "0") == "1",
     WTF_CSRF_TIME_LIMIT=None,
+    # Token is enough; Referer checks break some browsers / privacy modes.
+    WTF_CSRF_SSL_STRICT=False,
 )
 
 # Trust nginx X-Forwarded-* for client IP + HTTPS scheme
