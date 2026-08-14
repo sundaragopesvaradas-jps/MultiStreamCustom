@@ -70,6 +70,21 @@ Open `http://<public-ip>/`, unlock with `UI_PIN`, paste YouTube + Facebook keys.
 
 Before Zoom: create/start the YouTube and Facebook live sessions so those keys are actually accepting video.
 
+## Diagnosing a destination that didn't go live
+
+The UI records every session. Open **Stream history** to see, per destination,
+whether video was actually delivered.
+
+| Result | Meaning | What to do |
+|--------|---------|------------|
+| Delivered | The platform accepted video for the whole session | If nothing appeared, the platform didn't publish it — on Facebook, press **Go Live** in Live Producer |
+| Connected, no video sent | Push started but no bytes moved | Stream key is dead or expired; regenerate it |
+| Failed to connect | Key refused or endpoint unreachable | Re-copy the stream key into the UI |
+| Dropped within 10s | Platform closed the connection early | Check the expandable log details on the history page |
+
+The home page also shows a live indicator so you can confirm both destination
+pushes are connected before your audience is watching.
+
 ## Ops
 
 | Item | Command |
@@ -77,7 +92,9 @@ Before Zoom: create/start the YouTube and Facebook live sessions so those keys a
 | Relay status | `sudo systemctl status mediamtx` |
 | UI status | `sudo systemctl status multistream-ui` |
 | Push logs | `sudo tail -f /var/log/multistream/*.log` |
+| Session history | `sudo cat /var/log/multistream/history.jsonl` |
 | Resync keys | `sudo /opt/multistream/bin/sync-secrets.sh` |
+| Redeploy code | `sudo bash vm/update.sh` |
 
 ## Security (Tier 1)
 
