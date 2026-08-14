@@ -10,24 +10,32 @@ LOG_DIR="/var/log/multistream"
 PATH_FILE="${RUN_DIR}/current-path"
 SESSION_FILE="${RUN_DIR}/current-session"
 
-mkdir -p "$RUN_DIR" "$LOG_DIR"
-chmod 700 "$LOG_DIR"
-
 if [[ ! -f "$ENABLED_FILE" ]]; then
-  cat > "$ENABLED_FILE" <<'EOF'
+  if [[ "$(id -u)" -eq 0 ]]; then
+    cat > "$ENABLED_FILE" <<'EOF'
 YOUTUBE_ENABLED=1
 FACEBOOK_ENABLED=1
 EOF
-  chmod 600 "$ENABLED_FILE"
+    chmod 600 "$ENABLED_FILE"
+  else
+    YOUTUBE_ENABLED=1
+    FACEBOOK_ENABLED=1
+  fi
 fi
 
-# shellcheck disable=SC1090
-source "$ENABLED_FILE"
+if [[ -f "$ENABLED_FILE" ]]; then
+  # shellcheck disable=SC1090
+  source "$ENABLED_FILE"
+fi
 if [[ -f "$ENV_FILE" ]]; then
   # shellcheck disable=SC1090
   source "$ENV_FILE"
 fi
 
+mkdir -p "$RUN_DIR" "$LOG_DIR" 2>/dev/null || true
+if [[ "$(id -u)" -eq 0 ]]; then
+  chmod 700 "$LOG_DIR" 2>/dev/null || true
+fi
 is_enabled() {
   local name="$1"
   case "$name" in

@@ -306,7 +306,7 @@ def write_enabled(youtube: bool, facebook: bool) -> None:
         f"YOUTUBE_ENABLED={'1' if youtube else '0'}\n"
         f"FACEBOOK_ENABLED={'1' if facebook else '0'}\n"
     )
-    os.chmod(ENABLED_FILE, 0o600)
+    os.chmod(ENABLED_FILE, 0o644)
 
 
 def destination_running(name: str) -> bool:

@@ -74,7 +74,7 @@ install -m 755 "$ROOT/vm/record-session.py" /opt/multistream/bin/record-session.
 install -m 644 "$ROOT/vm/mediamtx.yml" /opt/multistream/etc/mediamtx.yml
 install -m 644 "$ROOT/vm/logrotate-multistream" /etc/logrotate.d/multistream
 if [[ ! -f /opt/multistream/etc/enabled.env ]]; then
-  install -m 600 "$ROOT/vm/enabled.env" /opt/multistream/etc/enabled.env
+  install -m 644 "$ROOT/vm/enabled.env" /opt/multistream/etc/enabled.env
 fi
 
 rsync -a --delete "$ROOT/ui/" /opt/multistream/ui/
