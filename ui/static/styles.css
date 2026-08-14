@@ -220,6 +220,44 @@ ol {
   font-weight: 600;
 }
 
+.dest-toggles {
+  margin-top: 0.85rem;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.dest-toggles fieldset {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin: 0;
+  padding: 0.75rem 1rem;
+}
+
+.dest-toggles legend {
+  padding: 0 0.35rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin: 0.45rem 0;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.toggle input {
+  width: 1.15rem;
+  height: 1.15rem;
+  accent-color: var(--accent);
+}
+
+.dest-toggles button {
+  width: fit-content;
+}
+
 .hint {
   color: var(--muted);
   margin: 0.35rem 0 0;

@@ -70,7 +70,13 @@ Open `http://<public-ip>/`, unlock with `UI_PIN`, paste YouTube + Facebook keys.
 
 Before Zoom: create/start the YouTube and Facebook live sessions so those keys are actually accepting video.
 
-## Diagnosing a destination that didn't go live
+## Auto deploy
+
+Pushing to `main` runs GitHub Actions → rsync → `vm/update.sh` on the Azure VM.
+
+Secrets required: `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`.
+
+Manual deploy still works: `sudo bash vm/update.sh` on the VM.
 
 The UI records every session. Open **Stream history** to see, per destination,
 whether video was actually delivered.

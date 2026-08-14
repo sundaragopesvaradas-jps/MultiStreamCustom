@@ -28,14 +28,32 @@
         {% if live.error %}
           {{ live.error }}
         {% elif live.publishing %}
-          Live — Zoom is publishing, {{ live.readers }} destination push(es) connected.
+          Live — Zoom is publishing.
+          YouTube {% if live.youtube_running %}pushing{% elif live.youtube_enabled %}starting…{% else %}off{% endif %},
+          Facebook {% if live.facebook_running %}pushing{% elif live.facebook_enabled %}starting…{% else %}off{% endif %}.
         {% else %}
           Idle — no Zoom stream is publishing.
         {% endif %}
       </p>
+
+      <form method="post" action="{{ url_for('update_destinations') }}" class="dest-toggles">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <fieldset>
+          <legend>Send this stream to</legend>
+          <label class="toggle">
+            <input type="checkbox" name="youtube" value="1" {% if youtube_enabled %}checked{% endif %}>
+            <span>YouTube {% if live.youtube_running %}(live){% endif %}</span>
+          </label>
+          <label class="toggle">
+            <input type="checkbox" name="facebook" value="1" {% if facebook_enabled %}checked{% endif %}>
+            <span>Facebook {% if live.facebook_running %}(live){% endif %}</span>
+          </label>
+        </fieldset>
+        <button type="submit">Apply destinations</button>
+      </form>
       <p class="hint">
-        Start Zoom, wait about ten seconds, then reload this page. You should see two
-        destination pushes connected before you rely on the broadcast.
+        Works mid-stream: turn a destination off to stop pushing, turn it on to start within a few seconds.
+        Keep at least one selected.
       </p>
     </section>
 

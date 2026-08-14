@@ -56,6 +56,8 @@ limiter = Limiter(
 CONFIG_ENV = Path("/opt/multistream/etc/multistream.env")
 HISTORY_FILE = Path("/var/log/multistream/history.jsonl")
 RUN_DIR = Path("/opt/multistream/run")
+ENABLED_FILE = Path("/opt/multistream/etc/enabled.env")
+APPLY_SCRIPT = Path("/opt/multistream/bin/apply-destinations.sh")
 MEDIAMTX_API = "http://127.0.0.1:9997/v3/paths/list"
 PUBLIC_HOST = os.environ.get("PUBLIC_HOST", "")
 HASH_PREFIX = "pbkdf2_sha256"
@@ -279,9 +281,73 @@ def read_history(limit: int = 25) -> list[dict]:
     return ordered[:limit]
 
 
+def read_enabled() -> dict[str, bool]:
+    defaults = {"youtube": True, "facebook": True}
+    if not ENABLED_FILE.exists():
+        return defaults
+    values = defaults.copy()
+    for line in ENABLED_FILE.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, raw = line.split("=", 1)
+        key = key.strip().upper()
+        on = raw.strip() == "1"
+        if key == "YOUTUBE_ENABLED":
+            values["youtube"] = on
+        elif key == "FACEBOOK_ENABLED":
+            values["facebook"] = on
+    return values
+
+
+def write_enabled(youtube: bool, facebook: bool) -> None:
+    ENABLED_FILE.parent.mkdir(parents=True, exist_ok=True)
+    ENABLED_FILE.write_text(
+        f"YOUTUBE_ENABLED={'1' if youtube else '0'}\n"
+        f"FACEBOOK_ENABLED={'1' if facebook else '0'}\n"
+    )
+    os.chmod(ENABLED_FILE, 0o600)
+
+
+def destination_running(name: str) -> bool:
+    pid_path = RUN_DIR / f"{name}.pid"
+    if not pid_path.exists():
+        return False
+    try:
+        pid = int(pid_path.read_text().strip())
+    except ValueError:
+        return False
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
+def apply_destinations() -> str:
+    result = subprocess.run(
+        [str(APPLY_SCRIPT), "apply"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    return (result.stdout or "") + (result.stderr or "")
+
+
 def live_status() -> dict:
     """Ask MediaMTX whether Zoom is publishing right now."""
-    status = {"publishing": False, "path": "", "readers": 0, "since": "", "error": ""}
+    enabled = read_enabled()
+    status = {
+        "publishing": False,
+        "path": "",
+        "readers": 0,
+        "since": "",
+        "error": "",
+        "youtube_enabled": enabled["youtube"],
+        "facebook_enabled": enabled["facebook"],
+        "youtube_running": destination_running("youtube"),
+        "facebook_running": destination_running("facebook"),
+    }
     try:
         with urllib.request.urlopen(MEDIAMTX_API, timeout=3) as response:
             payload = json.loads(response.read().decode("utf-8"))
@@ -301,7 +367,6 @@ def live_status() -> dict:
         break
 
     if status["publishing"]:
-        # Each active FFmpeg push registers as one reader on the path.
         status["destinations_connected"] = status["readers"]
     return status
 
@@ -355,6 +420,7 @@ def index():
 
     host = public_host()
     zoom_server = f"rtmp://{host}/live"
+    enabled = read_enabled()
     return render_template(
         "index.html",
         zoom_server=zoom_server,
@@ -363,6 +429,8 @@ def index():
         facebook_masked=mask(fb),
         youtube_set=yt not in ("", "REPLACE_ME"),
         facebook_set=fb not in ("", "REPLACE_ME"),
+        youtube_enabled=enabled["youtube"],
+        facebook_enabled=enabled["facebook"],
         live=live_status(),
         recent=read_history(limit=3),
     )
@@ -379,6 +447,32 @@ def history():
 @limiter.exempt
 def api_status():
     return live_status()
+
+
+@app.post("/destinations")
+@login_required
+def update_destinations():
+    youtube = request.form.get("youtube") == "1"
+    facebook = request.form.get("facebook") == "1"
+    if not youtube and not facebook:
+        flash("Keep at least one destination on.", "error")
+        return redirect(url_for("index"))
+    try:
+        write_enabled(youtube, facebook)
+        output = apply_destinations()
+        parts = []
+        if youtube:
+            parts.append("YouTube")
+        if facebook:
+            parts.append("Facebook")
+        flash(
+            f"Streaming to: {', '.join(parts)}. "
+            + ("Applied to the live session." if "started" in output or "stopped" in output or "already" in output else "Saved for the next stream."),
+            "ok",
+        )
+    except Exception as exc:  # noqa: BLE001
+        flash(f"Could not update destinations: {exc}", "error")
+    return redirect(url_for("index"))
 
 
 @app.post("/keys")

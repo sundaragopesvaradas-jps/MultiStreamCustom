@@ -27,10 +27,9 @@ authInternalUsers:
       - action: api
 
 pathDefaults:
-  # When Zoom starts publishing, push copies to YT + FB (no re-encode)
-  runOnReady: /opt/multistream/bin/push-destinations.sh $MTX_PATH
+  runOnReady: /opt/multistream/bin/on-stream-ready.sh $MTX_PATH
   runOnReadyRestart: yes
-  runOnNotReady: /opt/multistream/bin/stop-destinations.sh $MTX_PATH
+  runOnNotReady: /opt/multistream/bin/on-stream-end.sh $MTX_PATH
 
 paths:
   all:
