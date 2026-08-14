@@ -1,0 +1,36 @@
+# MediaMTX — Zoom ingest + fan-out hooks
+# Docs: https://github.com/bluenviron/mediamtx
+
+logLevel: info
+logDestinations: [stdout]
+
+rtmp: yes
+rtmpAddress: :1935
+
+# Disable unused protocols to reduce attack surface
+rtsp: no
+hls: no
+webrtc: no
+srt: no
+
+api: yes
+apiAddress: 127.0.0.1:9997
+
+# Open publish/read locally; fan-out script enforces ingest key (live/<key>).
+authMethod: internal
+authInternalUsers:
+  - user: any
+    pass:
+    permissions:
+      - action: publish
+      - action: read
+      - action: api
+
+pathDefaults:
+  # When Zoom starts publishing, push copies to YT + FB (no re-encode)
+  runOnReady: /opt/multistream/bin/push-destinations.sh $MTX_PATH
+  runOnReadyRestart: yes
+  runOnNotReady: /opt/multistream/bin/stop-destinations.sh $MTX_PATH
+
+paths:
+  all:

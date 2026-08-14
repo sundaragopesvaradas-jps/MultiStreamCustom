@@ -1,0 +1,8 @@
+[Unit]
+Description=Sync MultiStream Key Vault secrets
+After=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/opt/multistream/etc/multistream.env
+ExecStart=/opt/multistream/bin/sync-secrets.sh

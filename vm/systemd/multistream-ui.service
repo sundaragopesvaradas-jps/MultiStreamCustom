@@ -1,0 +1,24 @@
+[Unit]
+Description=MultiStream PIN UI
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/multistream/ui
+EnvironmentFile=/opt/multistream/etc/multistream.env
+EnvironmentFile=-/opt/multistream/etc/ui.env
+ExecStartPre=/opt/multistream/bin/refresh-ui-env.sh
+ExecStart=/opt/multistream/ui/.venv/bin/gunicorn \
+  --bind 127.0.0.1:8080 \
+  --workers 1 \
+  --threads 4 \
+  --access-logfile /var/log/multistream/ui-access.log \
+  --error-logfile /var/log/multistream/ui-error.log \
+  app:app
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

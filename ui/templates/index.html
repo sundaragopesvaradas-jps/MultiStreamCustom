@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MultiStream — Keys</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+  <main class="shell wide">
+    <header class="top">
+      <div>
+        <h1>MultiStream</h1>
+        <p class="lede">Zoom → Azure → YouTube + Facebook</p>
+      </div>
+      <form method="post" action="{{ url_for('logout') }}">
+        <button type="submit" class="ghost">Log out</button>
+      </form>
+    </header>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <ul class="flash" role="status" aria-live="polite">
+          {% for category, message in messages %}
+            <li class="{{ category }}">{{ message }}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+    {% endwith %}
+
+    <section aria-labelledby="zoom-heading">
+      <h2 id="zoom-heading">Paste into Zoom</h2>
+      <p>Meeting → More → Live on Custom Live Streaming Service</p>
+      <dl class="kv">
+        <div>
+          <dt>Stream URL (Server URL)</dt>
+          <dd>
+            <code id="zoom-server">{{ zoom_server }}</code>
+            <button type="button" class="ghost" data-copy="zoom-server">Copy</button>
+          </dd>
+        </div>
+        <div>
+          <dt>Stream key</dt>
+          <dd>
+            <code id="zoom-key">{{ zoom_key }}</code>
+            <button type="button" class="ghost" data-copy="zoom-key">Copy</button>
+          </dd>
+        </div>
+      </dl>
+    </section>
+
+    <section aria-labelledby="dest-heading">
+      <h2 id="dest-heading">Destination keys</h2>
+      <p>Leave a field blank to keep the current value. Keys are stored in Azure Key Vault.</p>
+      <p class="status">
+        YouTube: {% if youtube_set %}set ({{ youtube_masked }}){% else %}not set{% endif %}
+        · Facebook: {% if facebook_set %}set ({{ facebook_masked }}){% else %}not set{% endif %}
+      </p>
+
+      <form method="post" action="{{ url_for('update_keys') }}" class="card-form">
+        <label for="youtube_stream_key">YouTube stream key</label>
+        <input
+          id="youtube_stream_key"
+          name="youtube_stream_key"
+          type="password"
+          autocomplete="off"
+          placeholder="Paste new YouTube key"
+          spellcheck="false"
+        >
+
+        <label for="facebook_stream_key">Facebook stream key</label>
+        <input
+          id="facebook_stream_key"
+          name="facebook_stream_key"
+          type="password"
+          autocomplete="off"
+          placeholder="Paste new Facebook key"
+          spellcheck="false"
+        >
+
+        <label for="new_pin">Change PIN (optional)</label>
+        <input
+          id="new_pin"
+          name="new_pin"
+          type="password"
+          inputmode="numeric"
+          autocomplete="new-password"
+          minlength="4"
+          maxlength="12"
+          placeholder="4–12 digits"
+        >
+
+        <button type="submit">Save keys</button>
+      </form>
+    </section>
+
+    <section aria-labelledby="tips-heading">
+      <h2 id="tips-heading">Before you go live</h2>
+      <ol>
+        <li>Create/start the YouTube Live stream (or Scheduled) so the key is active.</li>
+        <li>Create the Facebook Live event / use Streaming Software key so FB is ready.</li>
+        <li>In Zoom, start Custom Live Streaming with the URL + key above.</li>
+        <li>Confirm both destinations show the feed before unmuting for the audience.</li>
+      </ol>
+    </section>
+  </main>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

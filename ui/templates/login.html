@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MultiStream — Login</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+  <main class="shell">
+    <h1>MultiStream</h1>
+    <p class="lede">Enter the team PIN to manage stream keys.</p>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <ul class="flash" role="status" aria-live="polite">
+          {% for category, message in messages %}
+            <li class="{{ category }}">{{ message }}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+    {% endwith %}
+
+    <form method="post" action="{{ url_for('login_post') }}" class="card-form">
+      <label for="pin">PIN</label>
+      <input
+        id="pin"
+        name="pin"
+        type="password"
+        inputmode="numeric"
+        autocomplete="current-password"
+        required
+        minlength="4"
+        maxlength="12"
+        autofocus
+      >
+      <button type="submit">Unlock</button>
+    </form>
+  </main>
+</body>
+</html>

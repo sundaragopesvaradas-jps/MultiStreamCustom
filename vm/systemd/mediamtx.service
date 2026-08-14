@@ -1,0 +1,17 @@
+[Unit]
+Description=MediaMTX RTMP relay for MultiStream
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+EnvironmentFile=/opt/multistream/etc/multistream.env
+ExecStartPre=/opt/multistream/bin/sync-secrets.sh
+ExecStart=/opt/multistream/bin/mediamtx /opt/multistream/etc/mediamtx.yml
+Restart=on-failure
+RestartSec=3
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

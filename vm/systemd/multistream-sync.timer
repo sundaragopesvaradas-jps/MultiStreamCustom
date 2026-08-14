@@ -1,0 +1,11 @@
+[Unit]
+Description=Run MultiStream secret sync every 5 minutes
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=5min
+AccuracySec=30s
+Unit=multistream-sync.service
+
+[Install]
+WantedBy=timers.target

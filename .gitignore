@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+ui.env
+destinations.env
+.azure/
+*.log
+.DS_Store
