@@ -34,7 +34,10 @@ chmod 700 /var/log/multistream /opt/multistream/run
 
 echo "==> Restart"
 /opt/multistream/bin/refresh-ui-env.sh
-REV="$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+REV="${DEPLOY_REVISION:-}"
+if [[ -z "$REV" ]]; then
+  REV="$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+fi
 printf '%s\n' "$REV" > /opt/multistream/etc/deploy-revision
 date -u +%Y-%m-%dT%H:%M:%SZ > /opt/multistream/etc/deployed-at
 systemctl restart multistream-ui.service

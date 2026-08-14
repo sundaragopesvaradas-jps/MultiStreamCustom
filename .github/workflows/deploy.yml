@@ -17,6 +17,8 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install to app directory
+        env:
+          DEPLOY_REVISION: ${{ github.sha }}
         run: |
           set -euo pipefail
           rsync -a --delete \
@@ -26,15 +28,17 @@ jobs:
             --exclude '__pycache__' \
             --exclude 'actions-runner' \
             ./ /home/multistream/MultiStreamCustom/
-          sudo /usr/bin/bash /home/multistream/MultiStreamCustom/vm/update.sh
+          export DEPLOY_REVISION="${DEPLOY_REVISION:0:7}"
+          sudo --preserve-env=DEPLOY_REVISION \
+            /usr/bin/bash /home/multistream/MultiStreamCustom/vm/update.sh
 
       - name: Verify health
         run: |
           set -euo pipefail
           for i in 1 2 3 4 5; do
-            if curl -fsS http://127.0.0.1/healthz | grep -q '"ok"'; then
-              curl -fsS http://127.0.0.1/healthz
-              echo
+            BODY="$(curl -fsS http://127.0.0.1:8080/healthz || true)"
+            if echo "$BODY" | grep -q '"ok"'; then
+              echo "$BODY"
               exit 0
             fi
             sleep 2

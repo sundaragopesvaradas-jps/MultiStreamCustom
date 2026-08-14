@@ -510,7 +510,15 @@ def update_keys():
 @app.get("/healthz")
 @limiter.exempt
 def healthz():
-    return {"ok": True}
+    revision = ""
+    deployed_at = ""
+    rev_path = Path("/opt/multistream/etc/deploy-revision")
+    at_path = Path("/opt/multistream/etc/deployed-at")
+    if rev_path.exists():
+        revision = rev_path.read_text().strip()
+    if at_path.exists():
+        deployed_at = at_path.read_text().strip()
+    return {"ok": True, "revision": revision, "deployed_at": deployed_at}
 
 
 @app.errorhandler(429)

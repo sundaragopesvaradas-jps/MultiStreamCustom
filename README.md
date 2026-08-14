@@ -72,9 +72,8 @@ Before Zoom: create/start the YouTube and Facebook live sessions so those keys a
 
 ## Auto deploy
 
-Pushing to `main` runs GitHub Actions → rsync → `vm/update.sh` on the Azure VM.
-
-Secrets required: `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`.
+Pushing to `main` runs GitHub Actions on a **self-hosted runner** on the Azure VM
+(`vm/update.sh`). SSH stays locked to your admin IPs; the runner pulls jobs outbound.
 
 Manual deploy still works: `sudo bash vm/update.sh` on the VM.
 
