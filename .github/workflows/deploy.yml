@@ -11,47 +11,33 @@ concurrency:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, multistream]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Deploy over SSH
-        env:
-          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      - name: Install to app directory
         run: |
           set -euo pipefail
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
-          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null
-
-          rsync -az --delete \
+          rsync -a --delete \
             --exclude '.git' \
             --exclude '.cursor' \
             --exclude '.venv' \
             --exclude '__pycache__' \
-            -e "ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes" \
-            ./ "${DEPLOY_USER}@${DEPLOY_HOST}:~/MultiStreamCustom/"
-
-          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes \
-            "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            "cd ~/MultiStreamCustom && sudo /usr/bin/bash /home/multistream/MultiStreamCustom/vm/update.sh"
+            --exclude 'actions-runner' \
+            ./ /home/multistream/MultiStreamCustom/
+          sudo /usr/bin/bash /home/multistream/MultiStreamCustom/vm/update.sh
 
       - name: Verify health
-        env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
         run: |
           set -euo pipefail
           for i in 1 2 3 4 5; do
-            if curl -fsS "http://${DEPLOY_HOST}/healthz" | grep -q '"ok"'; then
-              echo "health ok"
+            if curl -fsS http://127.0.0.1/healthz | grep -q '"ok"'; then
+              curl -fsS http://127.0.0.1/healthz
+              echo
               exit 0
             fi
-            sleep 3
+            sleep 2
           done
           echo "health check failed" >&2
           exit 1
