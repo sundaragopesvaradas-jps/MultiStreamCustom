@@ -14,6 +14,7 @@
         <p class="lede">Zoom → Azure → YouTube + Facebook</p>
       </div>
       <form method="post" action="{{ url_for('logout') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button type="submit" class="ghost">Log out</button>
       </form>
     </header>
@@ -58,6 +59,7 @@
       </p>
 
       <form method="post" action="{{ url_for('update_keys') }}" class="card-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <label for="youtube_stream_key">YouTube stream key</label>
         <input
           id="youtube_stream_key"

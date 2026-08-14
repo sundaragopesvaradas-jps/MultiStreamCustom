@@ -79,11 +79,19 @@ Before Zoom: create/start the YouTube and Facebook live sessions so those keys a
 | Push logs | `sudo tail -f /var/log/multistream/*.log` |
 | Resync keys | `sudo /opt/multistream/bin/sync-secrets.sh` |
 
-## Security notes
+## Security (Tier 1)
 
-- PIN is shared-team protection, not SSO. Restrict SSH (NSG source IP) when you can.
-- UI is HTTP on port 80 by default. Add Let’s Encrypt later if you want HTTPS.
-- Keep the ingest stream key private; anyone with URL+key can publish into your relay.
+- PIN stored as **PBKDF2 hash** in Key Vault (`ui-pin-hash`)
+- **Flask-Limiter**: 5 login attempts / IP / 15 minutes
+- **nginx** `limit_req` on `/login`
+- **fail2ban**: SSH + login 401/429
+- **HTTPS** via Let’s Encrypt on the Azure FQDN
+- **CSRF** on forms; session cookie HttpOnly + 2h lifetime + Secure (when HTTPS on)
+- **SSH NSG** locked to admin IPs (not `*`)
+
+Apply/repair on the VM: `sudo bash vm/harden.sh`
+
+Keep the ingest stream key private; anyone with URL+key can publish into your relay (RTMP still public for Zoom).
 
 ## Layout
 
