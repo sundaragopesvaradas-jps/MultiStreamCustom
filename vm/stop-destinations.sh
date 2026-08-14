@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Stop FFmpeg push processes for a MediaMTX path.
-set -euo pipefail
+# Normally the runOnReady hook records history itself; this is the backstop.
+set -uo pipefail
 
 PATH_NAME="${1:-}"
 SAFE_NAME="${PATH_NAME//\//_}"
@@ -13,3 +14,5 @@ if [[ -f "$PID_FILE" ]]; then
   rm -f "$PID_FILE"
   echo "stopped pushes for $PATH_NAME"
 fi
+
+rm -f /opt/multistream/run/current-session

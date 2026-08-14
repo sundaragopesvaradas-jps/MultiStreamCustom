@@ -13,11 +13,31 @@
         <h1>MultiStream</h1>
         <p class="lede">Zoom → Azure → YouTube + Facebook</p>
       </div>
-      <form method="post" action="{{ url_for('logout') }}">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button type="submit" class="ghost">Log out</button>
-      </form>
+      <div class="top-actions">
+        <a class="ghost-link" href="{{ url_for('history') }}">Stream history</a>
+        <form method="post" action="{{ url_for('logout') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="ghost">Log out</button>
+        </form>
+      </div>
     </header>
+
+    <section aria-labelledby="live-heading">
+      <h2 id="live-heading">Right now</h2>
+      <p id="live-status" class="live-status" role="status" aria-live="polite">
+        {% if live.error %}
+          {{ live.error }}
+        {% elif live.publishing %}
+          Live — Zoom is publishing, {{ live.readers }} destination push(es) connected.
+        {% else %}
+          Idle — no Zoom stream is publishing.
+        {% endif %}
+      </p>
+      <p class="hint">
+        Start Zoom, wait about ten seconds, then reload this page. You should see two
+        destination pushes connected before you rely on the broadcast.
+      </p>
+    </section>
 
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
@@ -96,11 +116,43 @@
       </form>
     </section>
 
+    {% if recent %}
+    <section aria-labelledby="recent-heading">
+      <h2 id="recent-heading">Last streams</h2>
+      <table class="history">
+        <caption class="sr-only">Most recent streaming sessions and their per-destination results</caption>
+        <thead>
+          <tr>
+            <th scope="col">When</th>
+            <th scope="col">Destination</th>
+            <th scope="col">Result</th>
+            <th scope="col">Duration</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for session in recent %}
+            {% for dest in session.destinations %}
+            <tr>
+              {% if loop.first %}
+              <th scope="row" rowspan="{{ session.destinations | length }}">{{ session.when }}</th>
+              {% endif %}
+              <td>{{ dest.name | capitalize }}</td>
+              <td><span class="badge {{ 'badge-ok' if dest.ok else 'badge-bad' }}">{{ dest.status_label }}</span></td>
+              <td>{{ dest.duration }}</td>
+            </tr>
+            {% endfor %}
+          {% endfor %}
+        </tbody>
+      </table>
+      <p><a class="ghost-link" href="{{ url_for('history') }}">See full history and error details</a></p>
+    </section>
+    {% endif %}
+
     <section aria-labelledby="tips-heading">
       <h2 id="tips-heading">Before you go live</h2>
       <ol>
         <li>Create/start the YouTube Live stream (or Scheduled) so the key is active.</li>
-        <li>Create the Facebook Live event / use Streaming Software key so FB is ready.</li>
+        <li>Create the Facebook Live event, then <strong>click “Go Live” in Facebook Live Producer</strong> — Facebook only shows a preview until you do.</li>
         <li>In Zoom, start Custom Live Streaming with the URL + key above.</li>
         <li>Confirm both destinations show the feed before unmuting for the audience.</li>
       </ol>

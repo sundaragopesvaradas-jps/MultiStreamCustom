@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MultiStream — Stream history</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+  <main class="shell wide">
+    <header class="top">
+      <div>
+        <h1>Stream history</h1>
+        <p class="lede">What each destination actually did, per session.</p>
+      </div>
+      <div class="top-actions">
+        <a class="ghost-link" href="{{ url_for('index') }}">Back to keys</a>
+        <form method="post" action="{{ url_for('logout') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="ghost">Log out</button>
+        </form>
+      </div>
+    </header>
+
+    {% if not sessions %}
+    <section aria-labelledby="empty-heading">
+      <h2 id="empty-heading">No sessions recorded yet</h2>
+      <p>Run a stream from Zoom and the results will appear here automatically.</p>
+    </section>
+    {% endif %}
+
+    {% for session in sessions %}
+    <section aria-labelledby="session-{{ loop.index }}">
+      <h2 id="session-{{ loop.index }}">{{ session.when }}</h2>
+      <table class="history">
+        <caption class="sr-only">Destination results for the session starting {{ session.when }}</caption>
+        <thead>
+          <tr>
+            <th scope="col">Destination</th>
+            <th scope="col">Result</th>
+            <th scope="col">Duration</th>
+            <th scope="col">Data sent</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for dest in session.destinations %}
+          <tr>
+            <th scope="row">{{ dest.name | capitalize }}</th>
+            <td><span class="badge {{ 'badge-ok' if dest.ok else 'badge-bad' }}">{{ dest.status_label }}</span></td>
+            <td>{{ dest.duration }}</td>
+            <td>{{ dest.size }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+
+      {% for dest in session.destinations %}
+        {% if dest.errors %}
+        <details>
+          <summary>{{ dest.name | capitalize }} log details</summary>
+          <pre class="logbox">{% for line in dest.errors %}{{ line }}
+{% endfor %}</pre>
+        </details>
+        {% endif %}
+      {% endfor %}
+    </section>
+    {% endfor %}
+
+    {% if sessions %}
+    <section aria-labelledby="reading-heading">
+      <h2 id="reading-heading">How to read this</h2>
+      <dl class="kv">
+        <div>
+          <dt>Delivered</dt>
+          <dd>Video was accepted by the destination for the whole session.</dd>
+        </div>
+        <div>
+          <dt>Connected, no video sent</dt>
+          <dd>The push started but no data moved — usually a dead or expired stream key.</dd>
+        </div>
+        <div>
+          <dt>Failed to connect</dt>
+          <dd>The destination refused the key or the endpoint was unreachable.</dd>
+        </div>
+      </dl>
+      <p class="hint">
+        If a destination says Delivered but nothing appeared on the page, the stream reached
+        the platform and the platform did not publish it. On Facebook that almost always means
+        the “Go Live” button in Live Producer was never pressed.
+      </p>
+    </section>
+    {% endif %}
+  </main>
+</body>
+</html>

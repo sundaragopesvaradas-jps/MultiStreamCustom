@@ -5,10 +5,13 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import os
 import secrets
 import subprocess
-from datetime import timedelta
+import urllib.error
+import urllib.request
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
 
@@ -51,9 +54,19 @@ limiter = Limiter(
 )
 
 CONFIG_ENV = Path("/opt/multistream/etc/multistream.env")
+HISTORY_FILE = Path("/var/log/multistream/history.jsonl")
+RUN_DIR = Path("/opt/multistream/run")
+MEDIAMTX_API = "http://127.0.0.1:9997/v3/paths/list"
 PUBLIC_HOST = os.environ.get("PUBLIC_HOST", "")
 HASH_PREFIX = "pbkdf2_sha256"
 HASH_ITERATIONS = 260000
+
+STATUS_LABELS = {
+    "delivered": "Delivered",
+    "failed": "Failed to connect",
+    "no_data": "Connected, no video sent",
+    "dropped_early": "Dropped within 10s",
+}
 
 
 def load_config() -> dict[str, str]:
@@ -193,6 +206,106 @@ def mask(value: str) -> str:
     return f"{value[:4]}••••{value[-4:]}"
 
 
+def humanize_bytes(value: int) -> str:
+    size = float(value)
+    for unit in ("B", "KB", "MB", "GB"):
+        if size < 1024 or unit == "GB":
+            return f"{size:.0f} {unit}" if unit == "B" else f"{size:.1f} {unit}"
+        size /= 1024
+    return f"{size:.1f} GB"
+
+
+def humanize_duration(seconds: float) -> str:
+    total = int(seconds)
+    if total < 60:
+        return f"{total}s"
+    minutes, secs = divmod(total, 60)
+    if minutes < 60:
+        return f"{minutes}m {secs}s"
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours}h {minutes}m"
+
+
+def local_time(iso_value: str) -> str:
+    try:
+        parsed = datetime.fromisoformat(iso_value.replace("Z", "+00:00"))
+    except ValueError:
+        return iso_value
+    return parsed.astimezone().strftime("%d %b %Y, %I:%M %p")
+
+
+def read_history(limit: int = 25) -> list[dict]:
+    """Group per-destination records into sessions, newest first."""
+    if not HISTORY_FILE.exists():
+        return []
+
+    sessions: dict[str, dict] = {}
+    for line in HISTORY_FILE.read_text(errors="replace").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+
+        session_id = record.get("session", "unknown")
+        session = sessions.setdefault(
+            session_id,
+            {"session": session_id, "started": record.get("started", ""), "destinations": []},
+        )
+        started = record.get("started", "")
+        if started and (not session["started"] or started < session["started"]):
+            session["started"] = started
+
+        status = record.get("status", "unknown")
+        session["destinations"].append(
+            {
+                "name": record.get("destination", "?"),
+                "status": status,
+                "status_label": STATUS_LABELS.get(status, status.replace("_", " ").title()),
+                "ok": status == "delivered",
+                "duration": humanize_duration(record.get("duration_sec", 0)),
+                "size": humanize_bytes(record.get("bytes", 0)),
+                "errors": record.get("errors", []),
+            }
+        )
+
+    ordered = sorted(sessions.values(), key=lambda item: item["started"], reverse=True)
+    for session in ordered:
+        session["when"] = local_time(session["started"])
+        session["destinations"].sort(key=lambda item: item["name"])
+        session["all_ok"] = all(dest["ok"] for dest in session["destinations"])
+    return ordered[:limit]
+
+
+def live_status() -> dict:
+    """Ask MediaMTX whether Zoom is publishing right now."""
+    status = {"publishing": False, "path": "", "readers": 0, "since": "", "error": ""}
+    try:
+        with urllib.request.urlopen(MEDIAMTX_API, timeout=3) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (urllib.error.URLError, OSError, json.JSONDecodeError, TimeoutError) as exc:
+        status["error"] = f"Relay API unreachable: {exc}"
+        return status
+
+    for item in payload.get("items", []):
+        if not item.get("ready"):
+            continue
+        status["publishing"] = True
+        status["path"] = item.get("name", "")
+        status["readers"] = len(item.get("readers", []))
+        ready_time = item.get("readyTime") or ""
+        if ready_time:
+            status["since"] = local_time(ready_time[:19] + "Z")
+        break
+
+    if status["publishing"]:
+        # Each active FFmpeg push registers as one reader on the path.
+        status["destinations_connected"] = status["readers"]
+    return status
+
+
 @app.context_processor
 def inject_csrf() -> dict[str, str]:
     return {"csrf_token": generate_csrf}
@@ -250,7 +363,22 @@ def index():
         facebook_masked=mask(fb),
         youtube_set=yt not in ("", "REPLACE_ME"),
         facebook_set=fb not in ("", "REPLACE_ME"),
+        live=live_status(),
+        recent=read_history(limit=3),
     )
+
+
+@app.get("/history")
+@login_required
+def history():
+    return render_template("history.html", sessions=read_history(limit=25))
+
+
+@app.get("/api/status")
+@login_required
+@limiter.exempt
+def api_status():
+    return live_status()
 
 
 @app.post("/keys")

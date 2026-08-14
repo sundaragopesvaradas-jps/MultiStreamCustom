@@ -1,0 +1,19 @@
+/var/log/multistream/*.log {
+    weekly
+    rotate 4
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0600 root root
+}
+
+/var/log/multistream/history.jsonl {
+    monthly
+    rotate 6
+    compress
+    missingok
+    notifempty
+    copytruncate
+    create 0600 root root
+}
