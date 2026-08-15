@@ -390,7 +390,8 @@ def _finalize_recording(
                 f"Reason: {reason}\n"
                 f"Local file: {local}\n"
                 f"Blob: {blob_name}\n"
-                f"URL: {url}\n"
+                f"Download (valid ~{blobstore.DEFAULT_DOWNLOAD_DAYS} days):\n{url}\n\n"
+                f"The storage account is private — this link is a temporary signed URL.\n"
                 f"Retention: {RETENTION_DAYS} days\n"
             ),
         )
