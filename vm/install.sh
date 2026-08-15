@@ -79,9 +79,16 @@ if [[ ! -f /opt/multistream/etc/enabled.env ]]; then
 fi
 
 rsync -a --delete "$ROOT/ui/" /opt/multistream/ui/
+rsync -a --delete "$ROOT/recording/" /opt/multistream/recording/
 python3 -m venv /opt/multistream/ui/.venv
 /opt/multistream/ui/.venv/bin/pip install --upgrade pip
 /opt/multistream/ui/.venv/bin/pip install -r /opt/multistream/ui/requirements.txt
+
+mkdir -p /var/lib/multistream/recordings
+chmod 700 /var/lib/multistream/recordings
+if [[ ! -x /opt/multistream/bin/zoom-sdk-recorder ]]; then
+  install -m 755 "$ROOT/vm/zoom-sdk-recorder.placeholder.sh" /opt/multistream/bin/zoom-sdk-recorder
+fi
 
 umask 077
 cat > /opt/multistream/etc/multistream.env <<EOF
@@ -112,6 +119,8 @@ systemctl daemon-reload
 systemctl enable --now mediamtx.service
 systemctl enable --now multistream-ui.service
 systemctl enable --now multistream-sync.timer
+systemctl enable --now multistream-recording.timer
+systemctl enable --now multistream-recording-purge.timer
 
 INGEST_KEY="$(az keyvault secret show --vault-name "$KEY_VAULT" --name ingest-stream-key --query value -o tsv)"
 
@@ -122,3 +131,4 @@ echo "Zoom URL:    rtmp://${PUBLIC_HOST}/live"
 echo "Zoom key:    ${INGEST_KEY}"
 echo ""
 echo "Open the UI, enter your PIN, paste YouTube + Facebook stream keys, then start Custom Live Streaming in Zoom."
+echo "Scheduled recording: see docs/RECORDING_SETUP.md (Meeting SDK + Azure Blob)."

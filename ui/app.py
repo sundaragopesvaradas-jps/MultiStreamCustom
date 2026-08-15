@@ -9,6 +9,7 @@ import json
 import os
 import secrets
 import subprocess
+import sys
 import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
@@ -709,11 +710,30 @@ def index():
         verify_apis=False,
     )
 
+    recording_config = None
+    recording_schedule_text: dict[str, str] = {}
+    if owner:
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+        from recording import store as recording_store
+        from recording.models import WEEKDAYS, WEEKDAY_LABELS
+
+        recording_config = recording_store.load()
+        for day in WEEKDAYS:
+            slots = recording_config.schedule.get(day) or []
+            recording_schedule_text[day] = ", ".join(
+                f"{slot.start}-{slot.end}" for slot in slots
+            )
+    else:
+        WEEKDAY_LABELS = {}
+
     return render_template(
         "index.html",
         is_owner=owner,
         role=session_role(),
         owner_pin_configured=owner_pin_configured(),
+        recording=recording_config,
+        recording_schedule_text=recording_schedule_text,
+        recording_weekdays=WEEKDAY_LABELS if owner else {},
         zoom_api_ready=bool(zoom_account_id and zoom_client_id and zoom_client_secret),
         zoom_meeting_id=zoom_meeting_id,
         zoom_account_id_set=bool(zoom_account_id),
@@ -1013,6 +1033,54 @@ def update_pins():
     return redirect(url_for("index"))
 
 
+@app.post("/recording/schedule")
+@owner_required
+def save_recording_schedule():
+    """Owner-only weekly IST schedule for the Meeting SDK recorder."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from recording import store as recording_store
+    from recording.models import RecordingConfig, TimeSlot, WEEKDAYS
+
+    enabled = request.form.get("recording_enabled") == "1"
+    meeting_id = request.form.get("recording_meeting_id", "").strip()
+    bot_name = request.form.get("recording_bot_name", "").strip()
+    schedule: dict = {}
+    try:
+        if meeting_id:
+            meeting_id = zoom.normalize_meeting_id(meeting_id)
+        for day in WEEKDAYS:
+            raw = request.form.get(f"slot_{day}", "").strip()
+            slots: list = []
+            if raw:
+                for piece in raw.split(","):
+                    piece = piece.strip()
+                    if not piece:
+                        continue
+                    if "-" not in piece:
+                        raise ValueError(
+                            f"{day}: use HH:MM-HH:MM (comma-separated for multiple)"
+                        )
+                    start, end = piece.split("-", 1)
+                    slot = TimeSlot(start=start.strip(), end=end.strip())
+                    slot.validate()
+                    slots.append(slot)
+            schedule[day] = slots
+        config = RecordingConfig(
+            enabled=enabled,
+            meeting_id=meeting_id,
+            bot_display_name=bot_name or "ISKCON Deoghar Archive",
+            schedule=schedule,
+        )
+        if enabled and not meeting_id:
+            flash("Enter a Zoom meeting ID before enabling recording.", "error")
+            return redirect(url_for("index"))
+        recording_store.save(config)
+        flash("Recording schedule saved.", "ok")
+    except Exception as exc:  # noqa: BLE001
+        flash(f"Could not save recording schedule: {exc}", "error")
+    return redirect(url_for("index"))
+
+
 @app.post("/metadata")
 @login_required
 def save_metadata():
@@ -1230,6 +1298,10 @@ def save_oauth_credentials():
         "zoom-account-id": request.form.get("zoom_account_id", "").strip(),
         "zoom-client-id": request.form.get("zoom_client_id", "").strip(),
         "zoom-client-secret": request.form.get("zoom_client_secret", "").strip(),
+        "zoom-sdk-key": request.form.get("zoom_sdk_key", "").strip(),
+        "zoom-sdk-secret": request.form.get("zoom_sdk_secret", "").strip(),
+        "recording-storage-account": request.form.get("recording_storage_account", "").strip(),
+        "recording-storage-container": request.form.get("recording_storage_container", "").strip(),
     }
     try:
         to_save = {name: value for name, value in fields.items() if value}

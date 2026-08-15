@@ -1,0 +1,12 @@
+[Unit]
+Description=ISKCON recording Azure Blob retention purge (6 months)
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/multistream
+EnvironmentFile=/opt/multistream/etc/multistream.env
+EnvironmentFile=-/opt/multistream/etc/ui.env
+Environment=PYTHONPATH=/opt/multistream:/opt/multistream/ui
+ExecStart=/opt/multistream/ui/.venv/bin/python -m recording purge
+Nice=10

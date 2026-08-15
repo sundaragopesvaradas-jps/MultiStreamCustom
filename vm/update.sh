@@ -28,10 +28,24 @@ fi
 
 echo "==> UI"
 rsync -a --delete --exclude '.venv' "$ROOT/ui/" /opt/multistream/ui/
+rsync -a --delete "$ROOT/recording/" /opt/multistream/recording/
 /opt/multistream/ui/.venv/bin/pip install -q -r /opt/multistream/ui/requirements.txt
 
-mkdir -p /var/log/multistream /opt/multistream/run
-chmod 700 /var/log/multistream /opt/multistream/run
+mkdir -p /var/log/multistream /opt/multistream/run /var/lib/multistream/recordings
+chmod 700 /var/log/multistream /opt/multistream/run /var/lib/multistream/recordings
+
+if [[ ! -x /opt/multistream/bin/zoom-sdk-recorder ]]; then
+  install -m 755 "$ROOT/vm/zoom-sdk-recorder.placeholder.sh" /opt/multistream/bin/zoom-sdk-recorder
+fi
+
+echo "==> Recording timers"
+cp "$ROOT/vm/systemd/multistream-recording.service" /etc/systemd/system/
+cp "$ROOT/vm/systemd/multistream-recording.timer" /etc/systemd/system/
+cp "$ROOT/vm/systemd/multistream-recording-purge.service" /etc/systemd/system/
+cp "$ROOT/vm/systemd/multistream-recording-purge.timer" /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now multistream-recording.timer
+systemctl enable --now multistream-recording-purge.timer
 
 echo "==> Restart"
 /opt/multistream/bin/refresh-ui-env.sh
@@ -46,5 +60,6 @@ systemctl restart mediamtx.service
 
 sleep 2
 systemctl is-active multistream-ui.service mediamtx.service
+systemctl is-active multistream-recording.timer multistream-recording-purge.timer || true
 echo "=== Update complete ==="
 echo "deploy_marker=$REV"

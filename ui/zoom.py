@@ -168,6 +168,21 @@ def _explain(status: int, payload: dict | str, action: str) -> str:
     return f"Zoom {action} failed ({status}): {message}"
 
 
+def get_meeting(get_secret: GetSecret, meeting_id: str) -> dict:
+    """Return Zoom meeting details. Raises ZoomError on failure."""
+    mid = normalize_meeting_id(meeting_id)
+    status, payload = _api(get_secret, "GET", f"/meetings/{urllib.parse.quote(mid)}")
+    if status >= 400 or not isinstance(payload, dict):
+        raise ZoomError(_explain(status, payload, "read"))
+    return payload
+
+
+def meeting_started(get_secret: GetSecret, meeting_id: str) -> bool:
+    """True when Zoom reports status == started."""
+    detail = get_meeting(get_secret, meeting_id)
+    return str(detail.get("status") or "").lower() == "started"
+
+
 def configure_livestream(
     get_secret: GetSecret,
     meeting_id: str,

@@ -21,6 +21,7 @@ sequenceDiagram
 - MediaMTX ingest + FFmpeg **stream copy** (no re-encode)
 - Destination keys in **Azure Key Vault**
 - PIN UI on the same VM (`http://<public-ip>/`) — **owner** (full page) and **manager** (start/stop) PINs; see `docs/OAUTH_SETUP.md` §4
+- Optional scheduled Zoom Meeting SDK recording → Azure Blob; see `docs/RECORDING_SETUP.md`
 
 ## Cost reality
 
