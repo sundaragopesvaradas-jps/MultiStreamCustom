@@ -104,14 +104,40 @@ named `facebook-graph-version` (for example `v26.0`) to move without a code chan
 
 Anyone with the PIN can change title/description afterward; they do not need your laptop. They use the same stored OAuth tokens on the server.
 
-## 4) Login lockout email (optional)
+## 4) Login lockout email
 
 After 5 wrong PIN attempts from one IP, login locks for 60 minutes and emails
-`sundaragopesvaradas.jps@gmail.com`. To enable the email (lockout works either way), store a
-Gmail App Password in Key Vault:
+`sundaragopesvaradas.jps@gmail.com`.
 
-1. Create an App Password at https://myaccount.google.com/apppasswords
-2. Set secrets:
-   - `smtp-user` = the Gmail address that will send
-   - `smtp-password` = the 16-character App Password
-   - optional: `smtp-host` (default `smtp.gmail.com`), `smtp-port` (default `587`)
+### Store SMTP secrets in Azure Key Vault
+
+Vault name: **`mskvjixozpwkde4wu`** (resource group `rg-multistream`).
+
+Secret names (exact):
+
+| Secret name | Value |
+| --- | --- |
+| `smtp-user` | Gmail address that sends the alert (e.g. `sundaragopesvaradas.jps@gmail.com`) |
+| `smtp-password` | 16-character [Gmail App Password](https://myaccount.google.com/apppasswords) — paste **without spaces** |
+| `smtp-host` (optional) | default `smtp.gmail.com` |
+| `smtp-port` (optional) | default `587` |
+
+**Portal**
+
+1. [Azure Portal](https://portal.azure.com) → Key vaults → `mskvjixozpwkde4wu` → **Secrets**
+2. **Generate/Import** → name `smtp-user` → paste the Gmail address → Create
+3. **Generate/Import** → name `smtp-password` → paste the App Password with spaces removed → Create
+
+**Azure CLI** (from a machine that has Key Vault Secrets Officer on this vault, or from the MultiStream VM after `az login --identity`):
+
+```bash
+az keyvault secret set --vault-name mskvjixozpwkde4wu --name smtp-user \
+  --value 'sundaragopesvaradas.jps@gmail.com'
+
+az keyvault secret set --vault-name mskvjixozpwkde4wu --name smtp-password \
+  --value 'YOUR_16_CHAR_APP_PASSWORD'
+```
+
+No UI redeploy is required — the next lockout reads these secrets live from Key Vault.
+
+**Note:** Use a Gmail App Password, not the normal Gmail login password. If the App Password was ever shared in chat or screenshots, revoke it in Google Account → App passwords and create a new one.
