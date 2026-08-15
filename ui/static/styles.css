@@ -57,6 +57,28 @@ h2 {
   font-size: 1.15rem;
 }
 
+h3 {
+  margin: 1.25rem 0 0.45rem;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.panel h3:first-of-type {
+  margin-top: 0.85rem;
+}
+
+.section-break {
+  height: 0;
+  margin: 2rem 0 1.75rem;
+  border: 0;
+  border-top: 1px solid color-mix(in srgb, var(--border) 80%, var(--muted));
+}
+
+.live-status {
+  margin: 0 0 1rem;
+  color: var(--muted);
+}
+
 .lede,
 .status {
   color: var(--muted);

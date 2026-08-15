@@ -37,21 +37,37 @@
     </div>
     {% endif %}
 
-    <section aria-labelledby="live-heading">
-      <h2 id="live-heading">Right now</h2>
-      <p id="live-status" class="live-status" role="status" aria-live="polite">
-        {% if live.error %}
-          {{ live.error }}
-        {% elif live.publishing %}
-          Live — Zoom is publishing.
-          YouTube {% if live.youtube_running %}pushing{% elif live.youtube_enabled %}starting…{% else %}off{% endif %},
-          Facebook {% if live.facebook_running %}pushing{% elif live.facebook_enabled %}starting…{% else %}off{% endif %}.
-        {% else %}
-          Idle — no Zoom stream is publishing.
-        {% endif %}
+    <p id="live-status" class="live-status" role="status" aria-live="polite">
+      {% if live.error %}
+        {{ live.error }}
+      {% elif live.publishing %}
+        Live — Zoom is publishing.
+        YouTube {% if live.youtube_running %}pushing{% elif live.youtube_enabled %}starting…{% else %}off{% endif %},
+        Facebook {% if live.facebook_running %}pushing{% elif live.facebook_enabled %}starting…{% else %}off{% endif %}.
+      {% else %}
+        Idle — no Zoom stream is publishing.
+      {% endif %}
+    </p>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <ul class="flash" role="status" aria-live="polite">
+          {% for category, message in messages %}
+            <li class="{{ category }}">{{ message }}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+    {% endwith %}
+
+    <section class="panel" aria-labelledby="golive-heading">
+      <h2 id="golive-heading">Go-live defaults</h2>
+      <p class="hint">
+        These control where an unprepared Zoom stream goes, and what title it gets.
+        Change them anytime — including mid-stream for destinations.
       </p>
 
-      <form method="post" action="{{ url_for('update_destinations') }}" class="dest-toggles">
+      <h3 id="dest-toggles-heading">Apply destinations</h3>
+      <form method="post" action="{{ url_for('update_destinations') }}" class="dest-toggles" aria-labelledby="dest-toggles-heading">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <fieldset>
           <legend>Send this stream to</legend>
@@ -68,19 +84,38 @@
       </form>
       <p class="hint">
         Works mid-stream: turn a destination off to stop pushing, turn it on to start within a few seconds.
-        Keep at least one selected.
+        Keep at least one selected. Auto-prepare only creates lives for selected destinations.
       </p>
+
+      <h3 id="defaults-heading">Default title (auto-prepare)</h3>
+      <p>
+        Used only when Zoom starts Custom Live Streaming <strong>without</strong> Prepare live.
+        Saved in Key Vault.
+      </p>
+      <form method="post" action="{{ url_for('save_defaults') }}" class="card-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label for="default_title">Default video title</label>
+        <input
+          id="default_title"
+          name="default_title"
+          type="text"
+          required
+          maxlength="100"
+          value="{{ default_live_title }}"
+          autocomplete="off"
+        >
+        <label for="default_description">Default description</label>
+        <textarea
+          id="default_description"
+          name="default_description"
+          rows="3"
+          maxlength="5000"
+        >{{ default_live_description }}</textarea>
+        <button type="submit">Save defaults</button>
+      </form>
     </section>
 
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% if messages %}
-        <ul class="flash" role="status" aria-live="polite">
-          {% for category, message in messages %}
-            <li class="{{ category }}">{{ message }}</li>
-          {% endfor %}
-        </ul>
-      {% endif %}
-    {% endwith %}
+    <div class="section-break" role="separator" aria-hidden="true"></div>
 
     <section aria-labelledby="meta-heading">
       <h2 id="meta-heading">Title and description</h2>
@@ -162,39 +197,6 @@
         {% endif %}
       </dl>
       {% endif %}
-    </section>
-
-    <section aria-labelledby="defaults-heading">
-      <h2 id="defaults-heading">Default title (auto-prepare)</h2>
-      <p>
-        Used only when Zoom starts Custom Live Streaming <strong>without</strong> Prepare live.
-        Saved in Key Vault. Anyone with the PIN can change this.
-      </p>
-      <form method="post" action="{{ url_for('save_defaults') }}" class="card-form">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <label for="default_title">Default video title</label>
-        <input
-          id="default_title"
-          name="default_title"
-          type="text"
-          required
-          maxlength="100"
-          value="{{ default_live_title }}"
-          autocomplete="off"
-        >
-        <label for="default_description">Default description</label>
-        <textarea
-          id="default_description"
-          name="default_description"
-          rows="3"
-          maxlength="5000"
-        >{{ default_live_description }}</textarea>
-        <button type="submit">Save defaults</button>
-      </form>
-      <p class="hint">
-        This does not change the next prepared stream. For an upcoming stream, edit
-        <strong>Title and description</strong> above and click Prepare live (or Update mid-stream).
-      </p>
     </section>
 
     <section aria-labelledby="zoom-heading">
