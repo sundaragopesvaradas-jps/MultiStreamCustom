@@ -269,7 +269,8 @@ ol {
   gap: 0.75rem;
 }
 
-.dest-toggles fieldset {
+.dest-toggles fieldset,
+fieldset.dest-toggles {
   border: 1px solid var(--border);
   border-radius: 8px;
   margin: 0;

@@ -60,17 +60,25 @@
     {% endwith %}
 
     <section class="panel" aria-labelledby="golive-heading">
-      <h2 id="golive-heading">Go-live defaults</h2>
+      <h2 id="golive-heading">Start streaming</h2>
       <p class="hint">
-        These control where an unprepared Zoom stream goes, and what title it gets.
-        Change them anytime — including mid-stream for destinations.
+        Pick the destinations, set the title, enter the Zoom meeting ID, then press
+        <strong>Start streaming</strong>. One click prepares the lives on each platform and tells
+        Zoom to begin Custom Live Streaming — the host can be on a phone.
       </p>
 
-      <h3 id="dest-toggles-heading">Apply destinations</h3>
-      <form method="post" action="{{ url_for('update_destinations') }}" class="dest-toggles" aria-labelledby="dest-toggles-heading">
+      {% if not zoom_api_ready %}
+        <p class="banner banner-warn" role="status">
+          Zoom API app is not configured yet, so this button cannot start the meeting stream.
+          Add the Server-to-Server credentials under <strong>Zoom API app</strong> below.
+        </p>
+      {% endif %}
+
+      <form method="post" action="{{ url_for('go_live') }}" class="card-form" aria-labelledby="golive-heading">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <fieldset>
-          <legend>Send this stream to</legend>
+
+        <fieldset class="dest-toggles">
+          <legend>1 · Where to stream</legend>
           <label class="toggle">
             <input type="checkbox" name="youtube" value="1" {% if youtube_enabled %}checked{% endif %}>
             <span>YouTube {% if live.youtube_running %}(live){% endif %}</span>
@@ -80,48 +88,94 @@
             <span>Facebook {% if live.facebook_running %}(live){% endif %}</span>
           </label>
         </fieldset>
-        <button type="submit">Apply destinations</button>
-      </form>
-      <p class="hint">
-        Works mid-stream: turn a destination off to stop pushing, turn it on to start within a few seconds.
-        Keep at least one selected. Auto-prepare only creates lives for selected destinations.
-      </p>
 
-      <h3 id="defaults-heading">Default title (auto-prepare)</h3>
-      <p>
-        Used only when Zoom starts Custom Live Streaming <strong>without</strong> Prepare live.
-        Saved in Key Vault.
-      </p>
-      <form method="post" action="{{ url_for('save_defaults') }}" class="card-form">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <label for="default_title">Default video title</label>
+        <label for="title">2 · Video title</label>
         <input
-          id="default_title"
-          name="default_title"
+          id="title"
+          name="title"
           type="text"
           required
           maxlength="100"
           value="{{ default_live_title }}"
           autocomplete="off"
         >
-        <label for="default_description">Default description</label>
+        <label for="description">Description</label>
         <textarea
-          id="default_description"
-          name="default_description"
+          id="description"
+          name="description"
           rows="3"
           maxlength="5000"
+          placeholder="Shown on YouTube and Facebook"
         >{{ default_live_description }}</textarea>
-        <button type="submit">Save defaults</button>
+
+        <label for="meeting_id">3 · Zoom meeting ID</label>
+        <input
+          id="meeting_id"
+          name="meeting_id"
+          type="text"
+          inputmode="numeric"
+          required
+          value="{{ zoom_meeting_id }}"
+          placeholder="891 2345 6789"
+          autocomplete="off"
+          aria-describedby="meeting-hint"
+        >
+        <p id="meeting-hint" class="hint">
+          The meeting must be scheduled on the connected Zoom account and already in progress.
+          Whoever is hosting it can be on mobile.
+        </p>
+
+        <div class="button-row">
+          <button type="submit" {% if not zoom_api_ready %}disabled aria-disabled="true"{% endif %}>
+            Start streaming
+          </button>
+          <button
+            type="submit"
+            formaction="{{ url_for('stop_live') }}"
+            class="ghost"
+            {% if not zoom_api_ready %}disabled aria-disabled="true"{% endif %}
+          >
+            Stop streaming
+          </button>
+        </div>
       </form>
+
+      <p class="hint">
+        The title is also saved as the default for auto-prepare. You do not need to press
+        <strong>Stop streaming</strong> when you are done — ending the Zoom meeting stops the
+        pushes and closes the YouTube and Facebook lives on its own. Use Stop only to end the
+        broadcast early while the meeting keeps running.
+      </p>
+
+      <h3 id="dest-toggles-heading">Change destinations mid-stream</h3>
+      <form method="post" action="{{ url_for('update_destinations') }}" class="dest-toggles" aria-labelledby="dest-toggles-heading">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <fieldset>
+          <legend>Currently pushing to</legend>
+          <label class="toggle">
+            <input type="checkbox" name="youtube" value="1" {% if youtube_enabled %}checked{% endif %}>
+            <span>YouTube</span>
+          </label>
+          <label class="toggle">
+            <input type="checkbox" name="facebook" value="1" {% if facebook_enabled %}checked{% endif %}>
+            <span>Facebook</span>
+          </label>
+        </fieldset>
+        <button type="submit" class="ghost">Apply now</button>
+      </form>
+      <p class="hint">
+        Turn one off to stop pushing to it, or on to start within a few seconds, without touching Zoom.
+      </p>
     </section>
 
     <div class="section-break" role="separator" aria-hidden="true"></div>
 
     <section aria-labelledby="meta-heading">
-      <h2 id="meta-heading">Title and description</h2>
+      <h2 id="meta-heading">Manual title and description</h2>
       <p>
-        These are applied to <strong>both</strong> YouTube and Facebook when you click
-        <strong>Prepare live</strong>. Anyone with the PIN can update them.
+        Only needed when the host starts Custom Live Streaming from desktop Zoom instead of
+        using <strong>Start streaming</strong>, or to retitle a broadcast that is already running.
+        Applied to <strong>both</strong> YouTube and Facebook. Anyone with the PIN can update them.
       </p>
 
       <div class="status" role="status">
@@ -148,9 +202,9 @@
 
       <form method="post" action="{{ url_for('prepare_live') }}" class="card-form">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <label for="title">Video title</label>
+        <label for="manual_title">Video title</label>
         <input
-          id="title"
+          id="manual_title"
           name="title"
           type="text"
           required
@@ -159,9 +213,9 @@
           autocomplete="off"
         >
 
-        <label for="description">Description</label>
+        <label for="manual_description">Description</label>
         <textarea
-          id="description"
+          id="manual_description"
           name="description"
           rows="4"
           maxlength="5000"
@@ -327,6 +381,25 @@
         <label for="facebook_config_id">Facebook Login configuration ID <span class="hint">(only if your app uses Facebook Login for Business)</span></label>
         <input id="facebook_config_id" name="facebook_config_id" type="text" autocomplete="off" placeholder="Leave blank if unsure" aria-describedby="facebook_config_help">
         <p id="facebook_config_help" class="hint">Find it under Facebook Login for Business &rsaquo; Configurations in the Meta App Dashboard. Leave blank to request permissions the classic way.</p>
+
+        <h3 id="zoom-app-heading">Zoom API app</h3>
+        <p class="hint">
+          A Server-to-Server OAuth app on the Zoom account that owns the meetings. This is what
+          lets <strong>Start streaming</strong> begin Custom Live Streaming for a mobile host.
+          Needs the meeting read/write and livestream scopes.
+        </p>
+        <p class="status" aria-live="polite">
+          Zoom Account ID: {% if zoom_account_id_set %}set ({{ zoom_account_id_masked }}){% else %}not set{% endif %}
+          · Client ID: {% if zoom_client_id_set %}set ({{ zoom_client_id_masked }}){% else %}not set{% endif %}
+          · Client Secret: {% if zoom_client_secret_set %}set ({{ zoom_client_secret_masked }}){% else %}not set{% endif %}
+        </p>
+        <label for="zoom_account_id">Zoom Account ID</label>
+        <input id="zoom_account_id" name="zoom_account_id" type="text" autocomplete="off" placeholder="Leave blank to keep current">
+        <label for="zoom_client_id">Zoom Client ID</label>
+        <input id="zoom_client_id" name="zoom_client_id" type="text" autocomplete="off" placeholder="Leave blank to keep current">
+        <label for="zoom_client_secret">Zoom Client Secret</label>
+        <input id="zoom_client_secret" name="zoom_client_secret" type="password" autocomplete="off" placeholder="Leave blank to keep current">
+
         <button type="submit">Save app credentials</button>
       </form>
     </section>
@@ -334,11 +407,12 @@
     <section aria-labelledby="tips-heading">
       <h2 id="tips-heading">Before you go live</h2>
       <ol>
-        <li>Connect YouTube and Facebook once (above).</li>
-        <li>Prefer <strong>Prepare live on platforms</strong> before Zoom. If you skip it, auto-prepare uses “{{ default_live_title }}” when Zoom connects.</li>
-        <li>In Zoom, start Custom Live Streaming with the Azure URL + key. Use a watch URL for Zoom’s page URL field.</li>
-        <li>To rename mid-stream, use <strong>Update title &amp; description</strong> — do not click Prepare live while Zoom is publishing.</li>
-        <li>Confirm both destinations on the history / live status before unmuting for the audience.</li>
+        <li>One-time: connect YouTube and Facebook, and save the Zoom API app credentials (above).</li>
+        <li>Start the Zoom meeting. Any host or co-host can be on mobile.</li>
+        <li>In <strong>Start streaming</strong>, tick the destinations, enter the title and the meeting ID, then press the button. It creates the lives and tells Zoom to publish.</li>
+        <li>Confirm both destinations on the live status before unmuting for the audience.</li>
+        <li>To rename mid-stream, use <strong>Update title &amp; description</strong> — never Prepare live while Zoom is publishing.</li>
+        <li>Ending the Zoom meeting ends everything. No stop click needed.</li>
       </ol>
     </section>
   </main>

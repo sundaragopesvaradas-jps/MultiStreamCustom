@@ -35,6 +35,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 import keyvault
 import notify
 import platforms
+import zoom
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY") or secrets.token_hex(32)
@@ -112,6 +113,20 @@ def get_secret_optional(name: str) -> str | None:
 
 def public_base() -> str:
     return platforms.public_base_url(public_host())
+
+
+def rtmp_host() -> str:
+    """Hostname Zoom should publish to. Prefer the FQDN over a bare IP."""
+    return public_base().split("://", 1)[-1].rstrip("/")
+
+
+def ingest_target() -> tuple[str, str, str]:
+    """(stream_url, stream_key, page_url) for Zoom's custom livestream."""
+    return (
+        f"rtmp://{rtmp_host()}/live",
+        get_secret("ingest-stream-key"),
+        public_base() + "/",
+    )
 
 
 def sync_secrets() -> None:
@@ -533,9 +548,21 @@ def index():
     facebook_app_id = get_secret_optional("facebook-app-id") or ""
     facebook_app_secret = get_secret_optional("facebook-app-secret") or ""
     facebook_config_id = get_secret_optional("facebook-login-config-id") or ""
+    zoom_account_id = get_secret_optional("zoom-account-id") or ""
+    zoom_client_id = get_secret_optional("zoom-client-id") or ""
+    zoom_client_secret = get_secret_optional("zoom-client-secret") or ""
+    zoom_meeting_id = get_secret_optional("zoom-meeting-id") or ""
 
     return render_template(
         "index.html",
+        zoom_api_ready=bool(zoom_account_id and zoom_client_id and zoom_client_secret),
+        zoom_meeting_id=zoom_meeting_id,
+        zoom_account_id_set=bool(zoom_account_id),
+        zoom_account_id_masked=mask(zoom_account_id),
+        zoom_client_id_set=bool(zoom_client_id),
+        zoom_client_id_masked=mask(zoom_client_id),
+        zoom_client_secret_set=bool(zoom_client_secret),
+        zoom_client_secret_masked=mask(zoom_client_secret),
         zoom_server=zoom_server,
         zoom_key=ingest,
         youtube_masked=mask(yt),
@@ -606,6 +633,146 @@ def update_destinations():
         )
     except Exception as exc:  # noqa: BLE001
         flash(f"Could not update destinations: {exc}", "error")
+    return redirect(url_for("index"))
+
+
+def _prepare_lives(title: str, description: str, enabled: dict[str, bool]) -> tuple[list[str], list[str]]:
+    """Create YT/FB lives for enabled destinations that need one."""
+    status = platforms.prepare_readiness(
+        get_secret,
+        set_secret,
+        youtube_enabled=enabled["youtube"],
+        facebook_enabled=enabled["facebook"],
+        verify_apis=True,
+    )
+
+    jobs = {}
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        if enabled["youtube"] and not status.youtube.ready:
+            jobs["YouTube"] = pool.submit(
+                platforms.youtube_prepare_live, get_secret, set_secret, title, description
+            )
+        if enabled["facebook"] and not status.facebook.ready:
+            jobs["Facebook"] = pool.submit(
+                platforms.facebook_prepare_live, get_secret, set_secret, title, description
+            )
+
+    ready: list[str] = []
+    failures: list[str] = []
+    for label, job in jobs.items():
+        try:
+            job.result()
+            ready.append(label)
+        except Exception as exc:  # noqa: BLE001
+            failures.append(f"{label}: {exc}")
+
+    # Destinations that were already live keep their existing objects.
+    if enabled["youtube"] and status.youtube.ready and "YouTube" not in ready:
+        ready.append("YouTube")
+    if enabled["facebook"] and status.facebook.ready and "Facebook" not in ready:
+        ready.append("Facebook")
+    return ready, failures
+
+
+@app.post("/go-live")
+@login_required
+@limiter.limit("20 per hour")
+def go_live():
+    """One action: pick destinations, set title, create lives, tell Zoom to stream."""
+    youtube = request.form.get("youtube") == "1"
+    facebook = request.form.get("facebook") == "1"
+    title = request.form.get("title", "").strip()
+    description = request.form.get("description", "").strip()
+    meeting_raw = request.form.get("meeting_id", "").strip()
+
+    if not youtube and not facebook:
+        flash("Choose at least one destination.", "error")
+        return redirect(url_for("index"))
+    if not title:
+        flash("Enter a title for the stream.", "error")
+        return redirect(url_for("index"))
+
+    try:
+        meeting_id = zoom.normalize_meeting_id(meeting_raw)
+    except zoom.ZoomError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("index"))
+
+    enabled = {"youtube": youtube, "facebook": facebook}
+    try:
+        write_enabled(youtube, facebook)
+        # Same text serves this stream and any later auto-prepare.
+        set_secret("stream-title", title)
+        set_secret("stream-description", description or title)
+        set_secret("default-stream-title", title)
+        set_secret("default-stream-description", description or title)
+        set_secret("zoom-meeting-id", meeting_id)
+    except Exception as exc:  # noqa: BLE001
+        flash(f"Could not save settings: {exc}", "error")
+        return redirect(url_for("index"))
+
+    ready, failures = _prepare_lives(title, description or title, enabled)
+    for failure in failures:
+        flash(failure, "error")
+    if not ready:
+        flash("No destination could be prepared, so Zoom was not started.", "error")
+        return redirect(url_for("index"))
+
+    try:
+        sync_secrets()
+    except Exception as exc:  # noqa: BLE001
+        flash(f"Could not refresh relay keys: {exc}", "error")
+        return redirect(url_for("index"))
+
+    try:
+        stream_url, stream_key, page_url = ingest_target()
+        zoom.configure_livestream(
+            get_secret,
+            meeting_id,
+            stream_url=stream_url,
+            stream_key=stream_key,
+            page_url=page_url,
+        )
+        zoom.start_livestream(get_secret, meeting_id, display_name=title)
+    except zoom.ZoomError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("index"))
+    except Exception as exc:  # noqa: BLE001
+        flash(f"Could not start the Zoom livestream: {exc}", "error")
+        return redirect(url_for("index"))
+
+    apply_destinations()
+    flash(
+        f"Streaming to {' and '.join(ready)}. Zoom is publishing to MultiStream — "
+        "give it a few seconds to appear on each platform.",
+        "ok",
+    )
+    return redirect(url_for("index"))
+
+
+@app.post("/stop-live")
+@login_required
+@limiter.limit("30 per hour")
+def stop_live():
+    meeting_raw = request.form.get("meeting_id", "").strip()
+    try:
+        meeting_id = zoom.normalize_meeting_id(
+            meeting_raw or (get_secret_optional("zoom-meeting-id") or "")
+        )
+    except zoom.ZoomError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("index"))
+
+    try:
+        zoom.stop_livestream(get_secret, meeting_id)
+        flash(
+            "Zoom livestream stopped. The meeting itself is still running.",
+            "ok",
+        )
+    except zoom.ZoomError as exc:
+        flash(str(exc), "error")
+    except Exception as exc:  # noqa: BLE001
+        flash(f"Could not stop the Zoom livestream: {exc}", "error")
     return redirect(url_for("index"))
 
 
@@ -848,6 +1015,9 @@ def save_oauth_credentials():
         "facebook-app-id": request.form.get("facebook_app_id", "").strip(),
         "facebook-app-secret": request.form.get("facebook_app_secret", "").strip(),
         "facebook-login-config-id": request.form.get("facebook_config_id", "").strip(),
+        "zoom-account-id": request.form.get("zoom_account_id", "").strip(),
+        "zoom-client-id": request.form.get("zoom_client_id", "").strip(),
+        "zoom-client-secret": request.form.get("zoom_client_secret", "").strip(),
     }
     try:
         saved = []
