@@ -21,6 +21,12 @@
       {% endif %}
     {% endwith %}
 
+    {% if login_locked %}
+    <div class="banner banner-warn" role="alert">
+      <p>{{ lock_message }}</p>
+    </div>
+    {% endif %}
+
     <form method="post" action="{{ url_for('login_post') }}" class="card-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <label for="pin">PIN</label>
@@ -34,8 +40,9 @@
         minlength="4"
         maxlength="12"
         autofocus
+        {% if login_locked %}disabled aria-disabled="true"{% endif %}
       >
-      <button type="submit">Unlock</button>
+      <button type="submit" {% if login_locked %}disabled aria-disabled="true"{% endif %}>Unlock</button>
     </form>
   </main>
 </body>

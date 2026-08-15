@@ -71,6 +71,7 @@ install -m 755 "$ROOT/vm/on-stream-end.sh" /opt/multistream/bin/on-stream-end.sh
 install -m 755 "$ROOT/vm/sync-secrets.sh" /opt/multistream/bin/sync-secrets.sh
 install -m 755 "$ROOT/vm/refresh-ui-env.sh" /opt/multistream/bin/refresh-ui-env.sh
 install -m 755 "$ROOT/vm/record-session.py" /opt/multistream/bin/record-session.py
+install -m 755 "$ROOT/vm/auto-prepare-live.py" /opt/multistream/bin/auto-prepare-live.py
 install -m 644 "$ROOT/vm/mediamtx.yml" /opt/multistream/etc/mediamtx.yml
 install -m 644 "$ROOT/vm/logrotate-multistream" /etc/logrotate.d/multistream
 if [[ ! -f /opt/multistream/etc/enabled.env ]]; then

@@ -28,6 +28,12 @@ printf '%s\n' "$PATH_NAME" > "${RUN_DIR}/current-path"
 date -u +%Y%m%dT%H%M%SZ > "${RUN_DIR}/current-session"
 chmod 600 "${RUN_DIR}/current-path" "${RUN_DIR}/current-session"
 
+# If Prepare live was skipped, mint YT/FB lives with the default title now.
+# Failures are logged but must not block the Zoom ingest path itself.
+if ! /opt/multistream/ui/.venv/bin/python /opt/multistream/bin/auto-prepare-live.py; then
+  echo "auto-prepare-live failed — destinations may not go public" >&2
+fi
+
 /opt/multistream/bin/apply-destinations.sh apply
 
 # Stay alive while Zoom publishes. Mid-stream toggles call apply separately.

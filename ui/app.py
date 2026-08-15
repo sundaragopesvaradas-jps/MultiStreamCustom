@@ -15,6 +15,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from flask import (
     Flask,
@@ -32,6 +33,7 @@ from flask_wtf.csrf import generate_csrf
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 import keyvault
+import notify
 import platforms
 
 app = Flask(__name__)
@@ -66,6 +68,11 @@ MEDIAMTX_API = "http://127.0.0.1:9997/v3/paths/list"
 PUBLIC_HOST = os.environ.get("PUBLIC_HOST", "")
 HASH_PREFIX = "pbkdf2_sha256"
 HASH_ITERATIONS = 260000
+IST = ZoneInfo("Asia/Kolkata")
+LOGIN_LOCK_FILE = RUN_DIR / "login-lock.json"
+LOGIN_FAIL_LIMIT = 5
+LOGIN_LOCK_MINUTES = 60
+
 
 STATUS_LABELS = {
     "delivered": "Delivered",
@@ -207,7 +214,102 @@ def local_time(iso_value: str) -> str:
         parsed = datetime.fromisoformat(iso_value.replace("Z", "+00:00"))
     except ValueError:
         return iso_value
-    return parsed.astimezone().strftime("%d %b %Y, %I:%M %p")
+    return parsed.astimezone(IST).strftime("%d %b %Y, %I:%M %p IST")
+
+
+def _lock_state() -> dict:
+    if not LOGIN_LOCK_FILE.exists():
+        return {"by_ip": {}}
+    try:
+        return json.loads(LOGIN_LOCK_FILE.read_text())
+    except (OSError, json.JSONDecodeError):
+        return {"by_ip": {}}
+
+
+def _save_lock_state(state: dict) -> None:
+    RUN_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = LOGIN_LOCK_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(state, indent=2))
+    tmp.replace(LOGIN_LOCK_FILE)
+    try:
+        LOGIN_LOCK_FILE.chmod(0o600)
+    except OSError:
+        pass
+
+
+def login_lock_info(ip: str) -> tuple[bool, str]:
+    """Return (locked, human message)."""
+    state = _lock_state()
+    entry = (state.get("by_ip") or {}).get(ip) or {}
+    until_raw = entry.get("locked_until")
+    if not until_raw:
+        return False, ""
+    try:
+        until = datetime.fromisoformat(until_raw.replace("Z", "+00:00"))
+    except ValueError:
+        return False, ""
+    now = datetime.now(timezone.utc)
+    if until <= now:
+        return False, ""
+    local = until.astimezone(IST).strftime("%d %b %Y, %I:%M %p IST")
+    return True, f"Too many incorrect PIN attempts. Login locked until {local}."
+
+
+def record_login_failure(ip: str) -> tuple[bool, str]:
+    """Track a failed PIN. Returns (just_locked, message)."""
+    state = _lock_state()
+    by_ip = state.setdefault("by_ip", {})
+    entry = by_ip.setdefault(ip, {"fails": 0, "locked_until": None, "alert_sent": False})
+
+    # Clear an expired lock so the next window starts fresh.
+    until_raw = entry.get("locked_until")
+    if until_raw:
+        try:
+            until = datetime.fromisoformat(until_raw.replace("Z", "+00:00"))
+            if until <= datetime.now(timezone.utc):
+                entry["fails"] = 0
+                entry["locked_until"] = None
+                entry["alert_sent"] = False
+        except ValueError:
+            entry["locked_until"] = None
+
+    entry["fails"] = int(entry.get("fails") or 0) + 1
+    just_locked = False
+    if entry["fails"] >= LOGIN_FAIL_LIMIT:
+        until = datetime.now(timezone.utc) + timedelta(minutes=LOGIN_LOCK_MINUTES)
+        entry["locked_until"] = until.strftime("%Y-%m-%dT%H:%M:%SZ")
+        just_locked = True
+        if not entry.get("alert_sent"):
+            when = until.astimezone(IST).strftime("%d %b %Y, %I:%M %p IST")
+            notify.send_alert(
+                get_secret_optional,
+                subject="MultiStream: login locked after failed PIN attempts",
+                body=(
+                    f"MultiStream UI received {LOGIN_FAIL_LIMIT} incorrect PIN entries "
+                    f"from {ip}.\n\n"
+                    f"Login is locked for {LOGIN_LOCK_MINUTES} minutes "
+                    f"(until {when}).\n\n"
+                    "If this was not you, rotate the UI PIN from a trusted network "
+                    "after the lock expires."
+                ),
+            )
+            entry["alert_sent"] = True
+
+    by_ip[ip] = entry
+    _save_lock_state(state)
+    if just_locked:
+        locked, msg = login_lock_info(ip)
+        return locked, msg
+    remaining = LOGIN_FAIL_LIMIT - int(entry["fails"])
+    return False, f"Incorrect PIN. {remaining} attempt(s) left before a 60-minute lock."
+
+
+def clear_login_failures(ip: str) -> None:
+    state = _lock_state()
+    by_ip = state.get("by_ip") or {}
+    if ip in by_ip:
+        by_ip.pop(ip, None)
+        _save_lock_state(state)
 
 
 def read_history(limit: int = 25) -> list[dict]:
@@ -354,21 +456,37 @@ def inject_csrf() -> dict[str, str]:
 def login():
     if session.get("authed"):
         return redirect(url_for("index"))
-    return render_template("login.html")
+    locked, message = login_lock_info(get_remote_address())
+    return render_template("login.html", login_locked=locked, lock_message=message)
 
 
 @app.post("/login")
-@limiter.limit("5 per 15 minutes")
+@limiter.limit("20 per hour")
 def login_post():
+    ip = get_remote_address()
+    locked, message = login_lock_info(ip)
+    if locked:
+        flash(message, "error")
+        return render_template("login.html", login_locked=True, lock_message=message), 429
+
     pin = request.form.get("pin", "")
     try:
         ok = pin_ok(pin)
     except Exception as exc:  # noqa: BLE001
         flash(f"Could not verify PIN: {exc}", "error")
-        return render_template("login.html"), 500
+        return render_template("login.html", login_locked=False, lock_message=""), 500
     if not ok:
-        flash("Incorrect PIN.", "error")
-        return render_template("login.html"), 401
+        just_locked, fail_msg = record_login_failure(ip)
+        flash(fail_msg, "error")
+        return (
+            render_template(
+                "login.html",
+                login_locked=just_locked,
+                lock_message=fail_msg if just_locked else "",
+            ),
+            429 if just_locked else 401,
+        )
+    clear_login_failures(ip)
     session.clear()
     session["authed"] = True
     session.permanent = True
@@ -396,11 +514,18 @@ def index():
     zoom_server = f"rtmp://{host}/live"
     enabled = read_enabled()
     oauth = platforms.oauth_configured(get_secret)
-    title = get_secret_optional("stream-title") or ""
-    description = get_secret_optional("stream-description") or ""
+    title = get_secret_optional("stream-title") or platforms.DEFAULT_LIVE_TITLE
+    description = get_secret_optional("stream-description") or platforms.DEFAULT_LIVE_DESCRIPTION
     yt_watch = get_secret_optional("youtube-watch-url") or ""
     fb_watch = get_secret_optional("facebook-watch-url") or ""
     fb_page = get_secret_optional("facebook-page-name") or ""
+    readiness = platforms.prepare_readiness(
+        get_secret,
+        set_secret,
+        youtube_enabled=enabled["youtube"],
+        facebook_enabled=enabled["facebook"],
+        verify_apis=False,
+    )
 
     google_client_id = get_secret_optional("google-oauth-client-id") or ""
     google_client_secret = get_secret_optional("google-oauth-client-secret") or ""
@@ -423,10 +548,13 @@ def index():
         oauth=oauth,
         stream_title=title,
         stream_description=description,
+        default_live_title=platforms.DEFAULT_LIVE_TITLE,
         youtube_watch_url=yt_watch,
         facebook_watch_url=fb_watch,
         facebook_page_name=fb_page,
         oauth_redirect_base=public_base(),
+        prepare_ready=readiness.ready,
+        prepare_message=readiness.message,
         google_client_id_set=bool(google_client_id),
         google_client_id_masked=mask(google_client_id),
         google_client_secret_set=bool(google_client_secret),

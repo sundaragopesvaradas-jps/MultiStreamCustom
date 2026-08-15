@@ -22,6 +22,21 @@
       </div>
     </header>
 
+    {% if not prepare_ready %}
+    <div class="banner banner-warn" role="alert">
+      <p><strong>Prepare live before Zoom.</strong> {{ prepare_message }}</p>
+      <p>
+        If Zoom starts Custom Live Streaming anyway, MultiStream will auto-create lives titled
+        “{{ default_live_title }}”. You can then use <strong>Update title &amp; description</strong>
+        while the stream is running.
+      </p>
+    </div>
+    {% else %}
+    <div class="banner banner-ok" role="status">
+      <p><strong>Lives look ready.</strong> {{ prepare_message }}</p>
+    </div>
+    {% endif %}
+
     <section aria-labelledby="live-heading">
       <h2 id="live-heading">Right now</h2>
       <p id="live-status" class="live-status" role="status" aria-live="polite">
@@ -285,8 +300,9 @@
       <h2 id="tips-heading">Before you go live</h2>
       <ol>
         <li>Connect YouTube and Facebook once (above).</li>
-        <li>Enter title + description → <strong>Prepare live on platforms</strong>.</li>
-        <li>In Zoom, start Custom Live Streaming with the Azure URL + key. Use a watch URL from Prepare live for Zoom’s page URL field.</li>
+        <li>Prefer <strong>Prepare live on platforms</strong> before Zoom. If you skip it, auto-prepare uses “{{ default_live_title }}” when Zoom connects.</li>
+        <li>In Zoom, start Custom Live Streaming with the Azure URL + key. Use a watch URL for Zoom’s page URL field.</li>
+        <li>To rename mid-stream, use <strong>Update title &amp; description</strong> — do not click Prepare live while Zoom is publishing.</li>
         <li>Confirm both destinations on the history / live status before unmuting for the audience.</li>
       </ol>
     </section>

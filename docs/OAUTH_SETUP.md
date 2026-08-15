@@ -95,9 +95,23 @@ named `facebook-graph-version` (for example `v26.0`) to move without a code chan
 
 ## 3) Every stream
 
-1. PIN login → set **Title** + **Description**.
-2. **Prepare live on platforms** (creates YT broadcast + FB live video, updates stream keys).
-3. Start Zoom **Custom Live Streaming** with the Azure RTMP URL/key.
+1. PIN login. Title/description default to **ISKCON Deoghar Live** in the form.
+2. Prefer **Prepare live on platforms** before Zoom (creates YT + FB lives + fresh keys).
+3. If you skip Prepare live, Zoom Custom Live Streaming still works: MultiStream auto-creates
+   lives with that default title when Zoom connects. Use **Update title & description** mid-stream
+   to rename without rotating keys.
 4. Use a watch URL from the UI for Zoom’s “Live streaming page URL”.
 
 Anyone with the PIN can change title/description afterward; they do not need your laptop. They use the same stored OAuth tokens on the server.
+
+## 4) Login lockout email (optional)
+
+After 5 wrong PIN attempts from one IP, login locks for 60 minutes and emails
+`sundaragopesvaradas.jps@gmail.com`. To enable the email (lockout works either way), store a
+Gmail App Password in Key Vault:
+
+1. Create an App Password at https://myaccount.google.com/apppasswords
+2. Set secrets:
+   - `smtp-user` = the Gmail address that will send
+   - `smtp-password` = the 16-character App Password
+   - optional: `smtp-host` (default `smtp.gmail.com`), `smtp-port` (default `587`)

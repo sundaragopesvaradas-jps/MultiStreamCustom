@@ -20,6 +20,16 @@ GetSecret = Callable[[str], str]
 SetSecret = Callable[[str, str], None]
 GetOptional = Callable[[str], str | None]
 
+# Shown in the UI form when nothing has been saved yet, and used by
+# auto-prepare when Zoom goes live without a fresh Prepare live.
+DEFAULT_LIVE_TITLE = "ISKCON Deoghar Live"
+DEFAULT_LIVE_DESCRIPTION = "ISKCON Deoghar Live"
+
+# YouTube lifeCycleStatus values that still accept an RTMP push.
+_YT_ACCEPTING = frozenset({"ready", "testing", "live"})
+# Facebook Live Video status values that still accept an RTMP push.
+_FB_ACCEPTING = frozenset({"UNPUBLISHED", "LIVE_NOW", "SCHEDULED_UNPUBLISHED", "SCHEDULED_LIVE"})
+
 
 class PlatformError(Exception):
     """User-visible API failure."""
@@ -31,6 +41,24 @@ class LivePrepResult:
     stream_key: str
     watch_url: str
     broadcast_id: str = ""
+
+
+@dataclass
+class DestinationReadiness:
+    needed: bool
+    ready: bool
+    detail: str
+
+
+@dataclass
+class PrepareReadiness:
+    """Whether enabled destinations still have usable live objects."""
+
+    ready: bool
+    needs_prepare: bool
+    youtube: DestinationReadiness
+    facebook: DestinationReadiness
+    message: str
 
 
 def _http_json(
@@ -274,11 +302,39 @@ def youtube_prepare_live(
     set_secret("youtube-stream-key", stream_key)
     set_secret("youtube-watch-url", watch_url)
     set_secret("youtube-broadcast-id", broadcast_id)
+    set_secret("lives-prepared-at", datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
     return LivePrepResult(
         platform="youtube",
         stream_key=stream_key,
         watch_url=watch_url,
         broadcast_id=broadcast_id,
+    )
+
+
+def youtube_broadcast_accepting(get_secret: GetSecret, set_secret: SetSecret) -> DestinationReadiness:
+    """True when the stored YouTube broadcast can still take an RTMP push."""
+    if not get_optional(get_secret, "youtube-oauth-tokens"):
+        return DestinationReadiness(True, False, "YouTube is not connected.")
+    broadcast_id = get_optional(get_secret, "youtube-broadcast-id")
+    if not broadcast_id:
+        return DestinationReadiness(True, False, "No YouTube broadcast prepared yet.")
+    try:
+        token = _youtube_access_token(get_secret, set_secret)
+        current = _http_json(
+            "GET",
+            f"{YT_API}/liveBroadcasts?part=status&id={urllib.parse.quote(broadcast_id)}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    except PlatformError as exc:
+        return DestinationReadiness(True, False, f"Could not check YouTube: {exc}")
+    items = current.get("items") or []
+    if not items:
+        return DestinationReadiness(True, False, "Stored YouTube broadcast no longer exists.")
+    status = (items[0].get("status") or {}).get("lifeCycleStatus", "")
+    if status in _YT_ACCEPTING:
+        return DestinationReadiness(True, True, f"YouTube broadcast is {status}.")
+    return DestinationReadiness(
+        True, False, f"YouTube broadcast is {status or 'unknown'} — prepare a new one."
     )
 
 
@@ -510,11 +566,118 @@ def facebook_prepare_live(
     set_secret("facebook-stream-url", stream_url)
     set_secret("facebook-watch-url", watch_url)
     set_secret("facebook-live-id", live_id)
+    set_secret("lives-prepared-at", datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
     return LivePrepResult(
         platform="facebook",
         stream_key=stream_key,
         watch_url=watch_url,
         broadcast_id=live_id,
+    )
+
+
+def facebook_live_accepting(get_secret: GetSecret) -> DestinationReadiness:
+    """True when the stored Facebook live video can still take an RTMP push."""
+    if not get_optional(get_secret, "facebook-page-token"):
+        return DestinationReadiness(True, False, "Facebook is not connected.")
+    live_id = get_optional(get_secret, "facebook-live-id")
+    page_token = get_optional(get_secret, "facebook-page-token")
+    if not live_id or not page_token:
+        return DestinationReadiness(True, False, "No Facebook live prepared yet.")
+    try:
+        detail = _http_json(
+            "GET",
+            f"{_fb_graph(get_secret)}/{live_id}"
+            f"?fields=status&access_token={urllib.parse.quote(page_token)}",
+        )
+    except PlatformError as exc:
+        return DestinationReadiness(True, False, f"Could not check Facebook: {exc}")
+    status = str(detail.get("status") or "")
+    if status in _FB_ACCEPTING:
+        return DestinationReadiness(True, True, f"Facebook live is {status}.")
+    return DestinationReadiness(
+        True, False, f"Facebook live is {status or 'unknown'} — prepare a new one."
+    )
+
+
+def prepare_readiness(
+    get_secret: GetSecret,
+    set_secret: SetSecret,
+    *,
+    youtube_enabled: bool,
+    facebook_enabled: bool,
+    verify_apis: bool = False,
+) -> PrepareReadiness:
+    """Decide whether Prepare live is still required before Zoom goes live.
+
+    verify_apis=False is cheap (IDs + prepared-at age) for the UI banner.
+    verify_apis=True hits YouTube/Facebook and is used by auto-prepare.
+    """
+    yt = DestinationReadiness(False, True, "YouTube destination is off.")
+    fb = DestinationReadiness(False, True, "Facebook destination is off.")
+
+    prepared_at = get_optional(get_secret, "lives-prepared-at")
+    age_hours = None
+    if prepared_at:
+        try:
+            when = datetime.fromisoformat(prepared_at.replace("Z", "+00:00"))
+            age_hours = (datetime.now(timezone.utc) - when).total_seconds() / 3600.0
+        except ValueError:
+            age_hours = None
+
+    if youtube_enabled:
+        if verify_apis:
+            yt = youtube_broadcast_accepting(get_secret, set_secret)
+        else:
+            has_id = bool(get_optional(get_secret, "youtube-broadcast-id"))
+            has_key = bool(get_optional(get_secret, "youtube-stream-key"))
+            stale = age_hours is None or age_hours > 6
+            if has_id and has_key and not stale:
+                yt = DestinationReadiness(True, True, "YouTube looks prepared.")
+            elif not has_id or not has_key:
+                yt = DestinationReadiness(True, False, "YouTube has no prepared live yet.")
+            else:
+                yt = DestinationReadiness(
+                    True, False, "Last Prepare live is older than 6 hours — create a fresh one."
+                )
+
+    if facebook_enabled:
+        if verify_apis:
+            fb = facebook_live_accepting(get_secret)
+        else:
+            has_id = bool(get_optional(get_secret, "facebook-live-id"))
+            has_key = bool(get_optional(get_secret, "facebook-stream-key"))
+            stale = age_hours is None or age_hours > 6
+            if has_id and has_key and not stale:
+                fb = DestinationReadiness(True, True, "Facebook looks prepared.")
+            elif not has_id or not has_key:
+                fb = DestinationReadiness(True, False, "Facebook has no prepared live yet.")
+            else:
+                fb = DestinationReadiness(
+                    True, False, "Last Prepare live is older than 6 hours — create a fresh one."
+                )
+
+    needed = (yt.needed and not yt.ready) or (fb.needed and not fb.ready)
+    ready = (not yt.needed or yt.ready) and (not fb.needed or fb.ready)
+    if not youtube_enabled and not facebook_enabled:
+        message = "Turn on at least one destination before going live."
+        needed = True
+        ready = False
+    elif ready:
+        message = "Lives look ready — Zoom can go live."
+    else:
+        parts = []
+        if yt.needed and not yt.ready:
+            parts.append(yt.detail)
+        if fb.needed and not fb.ready:
+            parts.append(fb.detail)
+        message = " ".join(parts) or "Prepare live before Zoom."
+
+    return PrepareReadiness(
+        ready=ready,
+        needs_prepare=needed,
+        youtube=yt,
+        facebook=fb,
+        message=message,
     )
 
 
