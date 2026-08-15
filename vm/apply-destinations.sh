@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Apply enabled destination toggles: start/stop YouTube and Facebook pushes
 # independently so they can flip mid-stream.
+#
+# ENHANCE_RELAY=1 re-encodes with light denoise / loudnorm / sharpen before push.
+# ENHANCE_RELAY=0 (default) stream-copies for lowest CPU and latency.
 set -uo pipefail
 
 ENV_FILE="/opt/multistream/etc/destinations.env"
@@ -15,11 +18,13 @@ if [[ ! -f "$ENABLED_FILE" ]]; then
     cat > "$ENABLED_FILE" <<'EOF'
 YOUTUBE_ENABLED=1
 FACEBOOK_ENABLED=1
+ENHANCE_RELAY=0
 EOF
     chmod 600 "$ENABLED_FILE"
   else
     YOUTUBE_ENABLED=1
     FACEBOOK_ENABLED=1
+    ENHANCE_RELAY=0
   fi
 fi
 
@@ -32,10 +37,13 @@ if [[ -f "$ENV_FILE" ]]; then
   source "$ENV_FILE"
 fi
 
+ENHANCE_RELAY="${ENHANCE_RELAY:-0}"
+
 mkdir -p "$RUN_DIR" "$LOG_DIR" 2>/dev/null || true
 if [[ "$(id -u)" -eq 0 ]]; then
   chmod 700 "$LOG_DIR" 2>/dev/null || true
 fi
+
 is_enabled() {
   local name="$1"
   case "$name" in
@@ -65,6 +73,15 @@ is_running() {
   kill -0 "$pid" 2>/dev/null
 }
 
+running_enhance_mode() {
+  local meta
+  meta="$(meta_file "$1")"
+  [[ -f "$meta" ]] || { echo ""; return 0; }
+  # shellcheck disable=SC1090
+  source "$meta"
+  echo "${enhance:-}"
+}
+
 stream_live() {
   [[ -f "$PATH_FILE" ]] || return 1
   local path
@@ -81,13 +98,52 @@ ensure_session() {
   cat "$SESSION_FILE"
 }
 
+start_ffmpeg() {
+  local name="$1"
+  local url="$2"
+  local path="$3"
+  local log="$4"
+  local progress="$5"
+  local input="rtmp://127.0.0.1:1935/${path}"
+
+  if [[ "$ENHANCE_RELAY" == "1" ]]; then
+    echo "$name: enhance mode (re-encode)" >&2
+    ffmpeg -hide_banner -loglevel info -nostdin \
+      -fflags +genpts \
+      -i "$input" \
+      -map 0:v:0 -map 0:a:0? \
+      -vf "hqdn3d=1.5:1.5:2:2,unsharp=5:5:0.4:5:5:0.0,format=yuv420p" \
+      -af "highpass=f=80,afftdn=nf=-25,loudnorm=I=-16:TP=-1.5:LRA=11" \
+      -c:v libx264 -preset veryfast -tune film \
+      -b:v 4500k -maxrate 5000k -bufsize 10000k -g 60 -keyint_min 60 -sc_threshold 0 \
+      -c:a aac -b:a 160k -ar 48000 -ac 2 \
+      -f flv -flvflags no_duration_filesize \
+      -progress "$progress" \
+      "$url" >>"$log" 2>&1 &
+  else
+    echo "$name: copy mode (no re-encode)" >&2
+    ffmpeg -hide_banner -loglevel info -nostdin \
+      -i "$input" \
+      -c copy -f flv -flvflags no_duration_filesize \
+      -progress "$progress" \
+      "$url" >>"$log" 2>&1 &
+  fi
+  echo $!
+}
+
 start_one() {
   local name="$1"
-  local url path session log progress meta
+  local url path session log progress meta pid
 
   if is_running "$name"; then
-    echo "$name already running"
-    return 0
+    local current
+    current="$(running_enhance_mode "$name")"
+    if [[ "$current" == "$ENHANCE_RELAY" ]]; then
+      echo "$name already running"
+      return 0
+    fi
+    echo "$name: enhance mode changed ($current -> $ENHANCE_RELAY) — restarting"
+    stop_one "$name"
   fi
 
   if ! stream_live; then
@@ -111,13 +167,7 @@ start_one() {
   chmod 600 "$log"
   : > "$progress"
 
-  ffmpeg -hide_banner -loglevel info -nostdin \
-    -i "rtmp://127.0.0.1:1935/${path}" \
-    -c copy -f flv -flvflags no_duration_filesize \
-    -progress "$progress" \
-    "$url" >>"$log" 2>&1 &
-
-  local pid=$!
+  pid="$(start_ffmpeg "$name" "$url" "$path" "$log" "$progress")"
   echo "$pid" > "$(pid_file "$name")"
   cat > "$meta" <<EOF
 session=${session}
@@ -126,9 +176,10 @@ path=${path}
 started=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 log=${log}
 progress=${progress}
+enhance=${ENHANCE_RELAY}
 EOF
   chmod 600 "$meta" "$(pid_file "$name")"
-  echo "started $name pid=$pid"
+  echo "started $name pid=$pid enhance=${ENHANCE_RELAY}"
 }
 
 record_and_cleanup() {
@@ -233,11 +284,12 @@ case "${1:-apply}" in
   status)
     for name in youtube facebook; do
       if is_running "$name"; then
-        echo "$name=running"
+        echo "$name=running enhance=$(running_enhance_mode "$name")"
       else
         echo "$name=stopped"
       fi
     done
+    echo "enhance_relay=${ENHANCE_RELAY}"
     if stream_live; then
       echo "zoom=live path=$(cat "$PATH_FILE")"
     else

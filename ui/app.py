@@ -501,7 +501,7 @@ def read_history(limit: int = 25) -> list[dict]:
 
 
 def read_enabled() -> dict[str, bool]:
-    defaults = {"youtube": True, "facebook": True}
+    defaults = {"youtube": True, "facebook": True, "enhance": False}
     if not ENABLED_FILE.exists():
         return defaults
     values = defaults.copy()
@@ -516,14 +516,25 @@ def read_enabled() -> dict[str, bool]:
             values["youtube"] = on
         elif key == "FACEBOOK_ENABLED":
             values["facebook"] = on
+        elif key == "ENHANCE_RELAY":
+            values["enhance"] = on
     return values
 
 
-def write_enabled(youtube: bool, facebook: bool) -> None:
+def write_enabled(
+    youtube: bool,
+    facebook: bool,
+    *,
+    enhance: bool | None = None,
+) -> None:
+    current = read_enabled()
+    if enhance is None:
+        enhance = current["enhance"]
     ENABLED_FILE.parent.mkdir(parents=True, exist_ok=True)
     ENABLED_FILE.write_text(
         f"YOUTUBE_ENABLED={'1' if youtube else '0'}\n"
         f"FACEBOOK_ENABLED={'1' if facebook else '0'}\n"
+        f"ENHANCE_RELAY={'1' if enhance else '0'}\n"
     )
     os.chmod(ENABLED_FILE, 0o644)
 
@@ -750,6 +761,7 @@ def index():
         facebook_set=fb not in ("", "REPLACE_ME"),
         youtube_enabled=enabled["youtube"],
         facebook_enabled=enabled["facebook"],
+        enhance_enabled=enabled["enhance"],
         live=live_status(),
         recent=read_history(limit=3),
         oauth=oauth,
@@ -794,20 +806,29 @@ def api_status():
 def update_destinations():
     youtube = request.form.get("youtube") == "1"
     facebook = request.form.get("facebook") == "1"
+    enhance = request.form.get("enhance") == "1"
     if not youtube and not facebook:
         flash("Keep at least one destination on.", "error")
         return redirect(url_for("index"))
     try:
-        write_enabled(youtube, facebook)
+        write_enabled(youtube, facebook, enhance=enhance)
         output = apply_destinations()
         parts = []
         if youtube:
             parts.append("YouTube")
         if facebook:
             parts.append("Facebook")
+        mode = "enhanced processing" if enhance else "direct copy"
         flash(
-            f"Streaming to: {', '.join(parts)}. "
-            + ("Applied to the live session." if "started" in output or "stopped" in output or "already" in output else "Saved for the next stream."),
+            f"Streaming to: {', '.join(parts)} ({mode}). "
+            + (
+                "Applied to the live session."
+                if "started" in output
+                or "stopped" in output
+                or "already" in output
+                or "restarted" in output
+                else "Saved for the next stream."
+            ),
             "ok",
         )
     except Exception as exc:  # noqa: BLE001
@@ -860,6 +881,7 @@ def go_live():
     """One action: pick destinations, set title, create lives, tell Zoom to stream."""
     youtube = request.form.get("youtube") == "1"
     facebook = request.form.get("facebook") == "1"
+    enhance = request.form.get("enhance") == "1"
     title = request.form.get("title", "").strip()
     description = request.form.get("description", "").strip()
     meeting_raw = request.form.get("meeting_id", "").strip()
@@ -879,7 +901,7 @@ def go_live():
 
     enabled = {"youtube": youtube, "facebook": facebook}
     try:
-        write_enabled(youtube, facebook)
+        write_enabled(youtube, facebook, enhance=enhance)
         # Same text serves this stream and any later auto-prepare.
         set_secrets(
             {

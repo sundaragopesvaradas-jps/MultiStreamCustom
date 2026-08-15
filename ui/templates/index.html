@@ -32,8 +32,10 @@
         Live — Zoom is publishing.
         YouTube {% if live.youtube_running %}pushing{% elif live.youtube_enabled %}starting…{% else %}off{% endif %},
         Facebook {% if live.facebook_running %}pushing{% elif live.facebook_enabled %}starting…{% else %}off{% endif %}.
+        {% if enhance_enabled %}Enhance on.{% else %}Direct copy.{% endif %}
       {% else %}
         Idle — no Zoom stream is publishing.
+        {% if enhance_enabled %}Enhance will apply on the next push.{% endif %}
       {% endif %}
     </p>
 
@@ -86,7 +88,15 @@
             <input type="checkbox" name="facebook" value="1" {% if facebook_enabled %}checked{% endif %}>
             <span>Facebook {% if live.facebook_running %}(live){% endif %}</span>
           </label>
+          <label class="toggle">
+            <input type="checkbox" name="enhance" value="1" {% if enhance_enabled %}checked{% endif %}>
+            <span>Enhance audio &amp; video before YouTube / Facebook</span>
+          </label>
         </fieldset>
+        <p class="hint">
+          Enhance re-encodes on the VM (noise reduction, speech loudness, light sharpen).
+          Clearer than a raw Zoom copy, but adds a few seconds of delay and uses more CPU.
+        </p>
 
         <label for="title">2 · Video title</label>
         <input
@@ -165,11 +175,16 @@
             <input type="checkbox" name="facebook" value="1" {% if facebook_enabled %}checked{% endif %}>
             <span>Facebook {% if live.facebook_running %}(live){% endif %}</span>
           </label>
+          <label class="toggle">
+            <input type="checkbox" name="enhance" value="1" {% if enhance_enabled %}checked{% endif %}>
+            <span>Enhance audio &amp; video</span>
+          </label>
         </fieldset>
         <button type="submit">Apply destinations</button>
       </form>
       <p class="hint">
-        Turn one off to stop pushing to it, or on to start within a few seconds.
+        Turn a destination off/on, or flip enhance mid-stream — pushes restart within a few seconds.
+        Enhance uses more CPU (works best on B2ms/B4ms); off = fastest direct copy.
       </p>
 
       <h3 id="meta-heading">Title &amp; description</h3>
