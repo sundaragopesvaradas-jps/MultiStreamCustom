@@ -284,18 +284,24 @@ def youtube_prepare_live(
 
 # --- Facebook ------------------------------------------------------------
 
-FB_AUTH = "https://www.facebook.com/v21.0/dialog/oauth"
-FB_TOKEN = "https://graph.facebook.com/v21.0/oauth/access_token"
-FB_GRAPH = "https://graph.facebook.com/v21.0"
+FB_DEFAULT_VERSION = "v23.0"
+# Page broadcasting needs only these; publish_video is for User-profile lives
+# and asking for it triggers an App Review requirement we do not need.
 FB_SCOPES = ",".join(
     [
         "pages_show_list",
-        "pages_manage_posts",
         "pages_read_engagement",
-        "publish_video",
-        "pages_manage_engagement",
+        "pages_manage_posts",
     ]
 )
+
+
+def _fb_version(get_secret: GetSecret) -> str:
+    return get_optional(get_secret, "facebook-graph-version") or FB_DEFAULT_VERSION
+
+
+def _fb_graph(get_secret: GetSecret) -> str:
+    return f"https://graph.facebook.com/{_fb_version(get_secret)}"
 
 
 def facebook_authorize_url(get_secret: GetSecret, public_host: str, state: str) -> str:
@@ -303,16 +309,20 @@ def facebook_authorize_url(get_secret: GetSecret, public_host: str, state: str) 
     if not app_id:
         raise PlatformError("Facebook App ID is not configured in Key Vault.")
     redirect = f"{public_base_url(public_host)}/oauth/facebook/callback"
-    query = urllib.parse.urlencode(
-        {
-            "client_id": app_id,
-            "redirect_uri": redirect,
-            "state": state,
-            "scope": FB_SCOPES,
-            "response_type": "code",
-        }
-    )
-    return f"{FB_AUTH}?{query}"
+    params = {
+        "client_id": app_id,
+        "redirect_uri": redirect,
+        "state": state,
+        "response_type": "code",
+    }
+    # Facebook Login for Business apps use a saved configuration instead of scopes.
+    config_id = get_optional(get_secret, "facebook-login-config-id")
+    if config_id:
+        params["config_id"] = config_id
+    else:
+        params["scope"] = FB_SCOPES
+    query = urllib.parse.urlencode(params)
+    return f"https://www.facebook.com/{_fb_version(get_secret)}/dialog/oauth?{query}"
 
 
 def facebook_exchange_code(
@@ -326,10 +336,12 @@ def facebook_exchange_code(
     app_secret = get_optional(get_secret, "facebook-app-secret")
     if not app_id or not app_secret:
         raise PlatformError("Facebook app credentials missing.")
+    graph = _fb_graph(get_secret)
+    token_url = f"{graph}/oauth/access_token"
     redirect = f"{public_base_url(public_host)}/oauth/facebook/callback"
     short = _http_json(
         "GET",
-        f"{FB_TOKEN}?{urllib.parse.urlencode({'client_id': app_id, 'client_secret': app_secret, 'redirect_uri': redirect, 'code': code})}",
+        f"{token_url}?{urllib.parse.urlencode({'client_id': app_id, 'client_secret': app_secret, 'redirect_uri': redirect, 'code': code})}",
     )
     user_token = short.get("access_token")
     if not user_token:
@@ -337,19 +349,21 @@ def facebook_exchange_code(
 
     long_lived = _http_json(
         "GET",
-        f"{FB_TOKEN}?{urllib.parse.urlencode({'grant_type': 'fb_exchange_token', 'client_id': app_id, 'client_secret': app_secret, 'fb_exchange_token': user_token})}",
+        f"{token_url}?{urllib.parse.urlencode({'grant_type': 'fb_exchange_token', 'client_id': app_id, 'client_secret': app_secret, 'fb_exchange_token': user_token})}",
     )
     long_token = long_lived.get("access_token") or user_token
 
     pages = _http_json(
         "GET",
-        f"{FB_GRAPH}/me/accounts?fields=id,name,access_token&access_token={urllib.parse.quote(long_token)}",
+        f"{graph}/me/accounts?fields=id,name,access_token&access_token={urllib.parse.quote(long_token)}",
     )
     data = pages.get("data") or []
     if not data:
         raise PlatformError(
-            "No Facebook Pages found for this account. Live API needs a Page — "
-            "create one or use an account that manages a Page."
+            "No Facebook Pages were returned. The Live API needs a Page you administer, "
+            "and the login must grant pages_show_list. If you used Facebook Login for "
+            "Business, check that the configuration selects your Page and the "
+            "pages_show_list, pages_read_engagement and pages_manage_posts permissions."
         )
     # Prefer previously selected page if still present.
     preferred = get_optional(get_secret, "facebook-page-id")
@@ -376,16 +390,19 @@ def facebook_prepare_live(
     if not page_id or not page_token:
         raise PlatformError("Facebook Page is not connected. Use Connect Facebook first.")
 
-    live = _http_json(
-        "POST",
-        f"{FB_GRAPH}/{page_id}/live_videos",
-        form={
-            "title": title[:255],
-            "description": description[:5000],
-            "status": "LIVE_NOW",
-            "access_token": page_token,
-        },
-    )
+    try:
+        live = _http_json(
+            "POST",
+            f"{_fb_graph(get_secret)}/{page_id}/live_videos",
+            form={
+                "title": title[:255],
+                "description": description[:5000],
+                "status": "LIVE_NOW",
+                "access_token": page_token,
+            },
+        )
+    except PlatformError as exc:
+        raise PlatformError(_explain_facebook_error(str(exc))) from exc
     live_id = str(live.get("id", ""))
     stream_url = live.get("secure_stream_url") or live.get("stream_url") or ""
     if not stream_url or "/" not in stream_url:
@@ -407,6 +424,33 @@ def facebook_prepare_live(
         watch_url=watch_url,
         broadcast_id=live_id,
     )
+
+
+def _explain_facebook_error(detail: str) -> str:
+    """Turn Meta's generic 'Permissions error' into the actual cause."""
+    if "1363120" in detail:
+        return (
+            "Facebook rejected the broadcast: the account must be at least 60 days old "
+            "before it can go live. " + detail
+        )
+    if "1363144" in detail:
+        return (
+            "Facebook rejected the broadcast: the Page needs at least 100 followers "
+            "before it can go live. " + detail
+        )
+    if "live-video-api" in detail or "(#10)" in detail:
+        return (
+            "Facebook requires App Review for the Live Video API when acting on behalf of "
+            "people who are not admins, developers or testers of your app. Keep the app in "
+            "Development mode and add yourself as an admin/tester, or submit for review. "
+            + detail
+        )
+    if "#200" in detail or "Permissions error" in detail:
+        return (
+            "Facebook permissions error. The Page token needs pages_read_engagement and "
+            "pages_manage_posts, and you must be an admin of the Page. " + detail
+        )
+    return detail
 
 
 def new_oauth_state() -> str:

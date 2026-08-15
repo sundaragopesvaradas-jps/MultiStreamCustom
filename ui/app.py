@@ -658,6 +658,7 @@ def save_oauth_credentials():
         "google-oauth-client-secret": request.form.get("google_client_secret", "").strip(),
         "facebook-app-id": request.form.get("facebook_app_id", "").strip(),
         "facebook-app-secret": request.form.get("facebook_app_secret", "").strip(),
+        "facebook-login-config-id": request.form.get("facebook_config_id", "").strip(),
     }
     try:
         saved = []

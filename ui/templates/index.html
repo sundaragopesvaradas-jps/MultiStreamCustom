@@ -263,6 +263,9 @@
         <input id="facebook_app_id" name="facebook_app_id" type="text" autocomplete="off" placeholder="Leave blank to keep current">
         <label for="facebook_app_secret">Facebook App Secret</label>
         <input id="facebook_app_secret" name="facebook_app_secret" type="password" autocomplete="off" placeholder="Leave blank to keep current">
+        <label for="facebook_config_id">Facebook Login configuration ID <span class="hint">(only if your app uses Facebook Login for Business)</span></label>
+        <input id="facebook_config_id" name="facebook_config_id" type="text" autocomplete="off" placeholder="Leave blank if unsure" aria-describedby="facebook_config_help">
+        <p id="facebook_config_help" class="hint">Find it under Facebook Login for Business &rsaquo; Configurations in the Meta App Dashboard. Leave blank to request permissions the classic way.</p>
         <button type="submit">Save app credentials</button>
       </form>
     </section>
