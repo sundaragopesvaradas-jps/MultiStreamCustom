@@ -15,17 +15,42 @@ source "$CONFIG_ENV"
 
 : "${KEY_VAULT_NAME:?KEY_VAULT_NAME required}"
 
-# Managed identity (VM system-assigned)
-az login --identity --output none 2>/dev/null || az login --identity --output none
+# Talk to Key Vault over REST with the VM's managed identity. The Azure CLI
+# needs `az login --identity` plus ~1s of interpreter startup per secret,
+# which dominated the time to prepare a live.
+KV_TOKEN="$(curl -sS -H Metadata:true --max-time 10 \
+  "http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https%3A%2F%2Fvault.azure.net" \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin).get("access_token",""))' 2>/dev/null || true)"
 
-get_secret() {
-  local name="$1"
-  az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name "$name" --query value -o tsv
-}
+if [[ -z "$KV_TOKEN" ]]; then
+  echo "IMDS token unavailable; falling back to az CLI" >&2
+  az login --identity --output none 2>/dev/null || az login --identity --output none
+fi
 
 get_secret_optional() {
   local name="$1"
-  az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name "$name" --query value -o tsv 2>/dev/null || true
+  if [[ -n "$KV_TOKEN" ]]; then
+    curl -sS --max-time 15 -H "Authorization: Bearer ${KV_TOKEN}" \
+      "https://${KEY_VAULT_NAME}.vault.azure.net/secrets/${name}?api-version=7.4" \
+      | python3 -c 'import json,sys
+try:
+    print(json.load(sys.stdin).get("value",""))
+except Exception:
+    print("")' 2>/dev/null || true
+  else
+    az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name "$name" \
+      --query value -o tsv 2>/dev/null || true
+  fi
+}
+
+get_secret() {
+  local name="$1" value
+  value="$(get_secret_optional "$name")"
+  if [[ -z "$value" ]]; then
+    echo "required secret '$name' is missing from $KEY_VAULT_NAME" >&2
+    exit 1
+  fi
+  printf '%s' "$value"
 }
 
 # Single-quote a value so destinations.env survives `source` even when the

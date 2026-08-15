@@ -11,6 +11,7 @@ import secrets
 import subprocess
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
@@ -30,6 +31,7 @@ from flask_wtf import CSRFProtect
 from flask_wtf.csrf import generate_csrf
 from werkzeug.middleware.proxy_fix import ProxyFix
 
+import keyvault
 import platforms
 
 app = Flask(__name__)
@@ -89,50 +91,12 @@ def kv_name() -> str:
     return os.environ.get("KEY_VAULT_NAME") or load_config().get("KEY_VAULT_NAME", "")
 
 
-def run_az(*args: str) -> str:
-    result = subprocess.run(
-        ["az", *args],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    return result.stdout.strip()
-
-
 def get_secret(name: str) -> str:
-    return run_az(
-        "keyvault",
-        "secret",
-        "show",
-        "--vault-name",
-        kv_name(),
-        "--name",
-        name,
-        "--query",
-        "value",
-        "-o",
-        "tsv",
-    )
+    return keyvault.get_secret(kv_name(), name)
 
 
 def set_secret(name: str, value: str) -> None:
-    subprocess.run(
-        [
-            "az",
-            "keyvault",
-            "secret",
-            "set",
-            "--vault-name",
-            kv_name(),
-            "--name",
-            name,
-            "--value",
-            value,
-            "--output",
-            "none",
-        ],
-        check=True,
-    )
+    keyvault.set_secret(kv_name(), name, value)
 
 
 def get_secret_optional(name: str) -> str | None:
@@ -575,29 +539,90 @@ def prepare_live():
         return redirect(url_for("index"))
 
     enabled = read_enabled()
-    messages: list[str] = []
+    if not enabled["youtube"] and not enabled["facebook"]:
+        flash("Turn on at least one destination first.", "error")
+        return redirect(url_for("index"))
+
     try:
         set_secret("stream-title", title)
         set_secret("stream-description", description)
 
-        if enabled["youtube"]:
-            result = platforms.youtube_prepare_live(get_secret, set_secret, title, description)
-            messages.append(f"YouTube ready — {result.watch_url}")
-        if enabled["facebook"]:
-            result = platforms.facebook_prepare_live(get_secret, set_secret, title, description)
-            messages.append(f"Facebook ready — {result.watch_url}")
+        # YouTube and Facebook are independent round trips; run them together
+        # so the operator waits for the slower one rather than their sum.
+        jobs = {}
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            if enabled["youtube"]:
+                jobs["YouTube"] = pool.submit(
+                    platforms.youtube_prepare_live, get_secret, set_secret, title, description
+                )
+            if enabled["facebook"]:
+                jobs["Facebook"] = pool.submit(
+                    platforms.facebook_prepare_live, get_secret, set_secret, title, description
+                )
 
-        if not enabled["youtube"] and not enabled["facebook"]:
-            flash("Turn on at least one destination first.", "error")
-            return redirect(url_for("index"))
+        messages: list[str] = []
+        failures: list[str] = []
+        for label, job in jobs.items():
+            try:
+                messages.append(f"{label} ready — {job.result().watch_url}")
+            except Exception as exc:  # noqa: BLE001
+                failures.append(f"{label}: {exc}")
 
-        sync_secrets()
-        apply_destinations()
-        flash(" ".join(messages) + " Now start Custom Live Streaming in Zoom.", "ok")
-    except platforms.PlatformError as exc:
-        flash(str(exc), "error")
+        if messages:
+            sync_secrets()
+            apply_destinations()
+            flash(" ".join(messages) + " Now start Custom Live Streaming in Zoom.", "ok")
+        for failure in failures:
+            flash(failure, "error")
     except Exception as exc:  # noqa: BLE001
         flash(f"Prepare live failed: {exc}", "error")
+    return redirect(url_for("index"))
+
+
+@app.post("/metadata/push")
+@login_required
+@limiter.limit("30 per hour")
+def push_metadata():
+    """Retitle the current lives in place — safe while Zoom is publishing."""
+    title = request.form.get("title", "").strip()
+    description = request.form.get("description", "").strip()
+    if not title:
+        flash("Title is required.", "error")
+        return redirect(url_for("index"))
+
+    enabled = read_enabled()
+    try:
+        set_secret("stream-title", title)
+        set_secret("stream-description", description)
+    except Exception as exc:  # noqa: BLE001
+        flash(f"Could not save metadata: {exc}", "error")
+        return redirect(url_for("index"))
+
+    jobs = {}
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        if enabled["youtube"]:
+            jobs["YouTube"] = pool.submit(
+                platforms.youtube_update_metadata, get_secret, set_secret, title, description
+            )
+        if enabled["facebook"]:
+            jobs["Facebook"] = pool.submit(
+                platforms.facebook_update_metadata, get_secret, title, description
+            )
+
+    updated: list[str] = []
+    for label, job in jobs.items():
+        try:
+            job.result()
+            updated.append(label)
+        except Exception as exc:  # noqa: BLE001
+            flash(f"{label}: {exc}", "error")
+
+    if updated:
+        flash(
+            f"Title and description updated on {' and '.join(updated)}. "
+            "Stream keys unchanged — the broadcast keeps running.",
+            "ok",
+        )
     return redirect(url_for("index"))
 
 

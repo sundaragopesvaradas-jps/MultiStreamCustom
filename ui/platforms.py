@@ -282,6 +282,78 @@ def youtube_prepare_live(
     )
 
 
+def youtube_update_metadata(
+    get_secret: GetSecret,
+    set_secret: SetSecret,
+    title: str,
+    description: str,
+) -> str:
+    """Retitle the existing broadcast without touching its stream key."""
+    broadcast_id = get_optional(get_secret, "youtube-broadcast-id")
+    if not broadcast_id:
+        raise PlatformError("No YouTube broadcast yet — use Prepare live first.")
+
+    token = _youtube_access_token(get_secret, set_secret)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    current = _http_json(
+        "GET",
+        f"{YT_API}/liveBroadcasts?part=snippet&id={urllib.parse.quote(broadcast_id)}",
+        headers=headers,
+    )
+    items = current.get("items") or []
+    if not items:
+        raise PlatformError(
+            "That YouTube broadcast no longer exists. Run Prepare live to create a new one."
+        )
+    snippet = items[0].get("snippet", {})
+
+    # YouTube replaces the whole snippet on update, so scheduledStartTime has
+    # to be sent back or the request is rejected.
+    body_snippet = {
+        "title": title[:100],
+        "description": description[:5000],
+    }
+    if snippet.get("scheduledStartTime"):
+        body_snippet["scheduledStartTime"] = snippet["scheduledStartTime"]
+
+    _http_json(
+        "PUT",
+        f"{YT_API}/liveBroadcasts?part=snippet,id",
+        headers=headers,
+        body={"id": broadcast_id, "snippet": body_snippet},
+    )
+    return f"https://youtu.be/{broadcast_id}"
+
+
+def facebook_update_metadata(
+    get_secret: GetSecret,
+    title: str,
+    description: str,
+) -> str:
+    """Retitle the existing live video without touching its stream key."""
+    live_id = get_optional(get_secret, "facebook-live-id")
+    page_token = get_optional(get_secret, "facebook-page-token")
+    if not live_id:
+        raise PlatformError("No Facebook live yet — use Prepare live first.")
+    if not page_token:
+        raise PlatformError("Facebook Page is not connected.")
+
+    try:
+        _http_json(
+            "POST",
+            f"{_fb_graph(get_secret)}/{live_id}",
+            form={
+                "title": title[:255],
+                "description": description[:5000],
+                "access_token": page_token,
+            },
+        )
+    except PlatformError as exc:
+        raise PlatformError(_explain_facebook_error(str(exc))) from exc
+    return get_optional(get_secret, "facebook-watch-url") or ""
+
+
 # --- Facebook ------------------------------------------------------------
 
 FB_DEFAULT_VERSION = "v23.0"

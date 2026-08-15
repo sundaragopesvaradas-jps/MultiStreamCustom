@@ -120,12 +120,16 @@
 
         <div class="button-row">
           <button type="submit">Prepare live on platforms</button>
+          <button type="submit" formaction="{{ url_for('push_metadata') }}" class="ghost">Update title &amp; description</button>
           <button type="submit" formaction="{{ url_for('save_metadata') }}" class="ghost">Save only</button>
         </div>
       </form>
       <p class="hint">
-        Prepare live creates/updates the YT + FB live objects with this title/description,
-        refreshes stream keys automatically, then you start Zoom Custom Live Streaming as usual.
+        <strong>Prepare live</strong> creates a new YouTube broadcast and Facebook live and issues
+        fresh stream keys — run it before each stream, never while Zoom is publishing.
+        <strong>Update title &amp; description</strong> edits the current live in place and leaves the
+        stream keys alone, so it is safe mid-stream.
+        <strong>Save only</strong> stores the text for the next Prepare live without calling either platform.
       </p>
       {% if youtube_watch_url or facebook_watch_url %}
       <dl class="kv">
