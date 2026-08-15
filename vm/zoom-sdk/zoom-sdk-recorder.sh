@@ -9,10 +9,12 @@ set -euo pipefail
 
 SDK_ROOT="${ZOOM_SDK_ROOT:-/opt/multistream/zoom-sdk}"
 DEMO_BIN="${ZOOM_SDK_DEMO_BIN:-$SDK_ROOT/sample/demo/bin/meetingSDKDemo}"
+DEMO_DIR="$(cd "$(dirname "$DEMO_BIN")" && pwd)"
 LIB_DIR="${ZOOM_SDK_LIB_DIR:-$SDK_ROOT/sample/demo/lib/zoom_meeting_sdk}"
 SETUP_AUDIO="${ZOOM_SDK_SETUP_AUDIO:-/opt/multistream/bin/zoom-sdk-setup-audio.sh}"
 WORK_ROOT="${ZOOM_SDK_WORK_ROOT:-/opt/multistream/run/recording-work}"
 LOG="${ZOOM_SDK_RECORDER_LOG:-/var/log/multistream/zoom-sdk-recorder.log}"
+CONFIG_LOCK="${ZOOM_SDK_CONFIG_LOCK:-/opt/multistream/run/zoom-sdk-config.lock}"
 
 job_path=""
 while [[ $# -gt 0 ]]; do
@@ -67,10 +69,18 @@ fi
 
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 work="$WORK_ROOT/$stamp-$$"
-mkdir -p "$work"
+mkdir -p "$work" "$(dirname "$CONFIG_LOCK")"
 cd "$work"
 
-cat > config.txt <<EOF
+# The Zoom sample always loads config.txt from the binary directory, not cwd.
+# Serialize writers so two overlapping jobs cannot clobber each other.
+exec 9>"$CONFIG_LOCK"
+if ! flock -n 9; then
+  echo "Another zoom-sdk-recorder holds $CONFIG_LOCK" >&2
+  exit 1
+fi
+
+cat > "$DEMO_DIR/config.txt" <<EOF
 meeting_number: "$meeting_number"
 token: "$token"
 meeting_password: "$meeting_password"
@@ -81,7 +91,9 @@ GetAudioRawData: "true"
 SendVideoRawData: "false"
 SendAudioRawData: "false"
 EOF
-chmod 600 config.txt
+chmod 600 "$DEMO_DIR/config.txt"
+# Keep a copy in the workdir for debugging.
+cp -f "$DEMO_DIR/config.txt" "$work/config.txt"
 
 if [[ -x "$SETUP_AUDIO" ]]; then
   "$SETUP_AUDIO" || echo "WARNING: PulseAudio setup failed; audio may be empty"
