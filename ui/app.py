@@ -146,6 +146,8 @@ INDEX_SECRET_NAMES = (
     "zoom-sdk-secret",
     "recording-storage-account",
     "recording-storage-container",
+    "smtp-user",
+    "smtp-password",
 )
 
 # Manager console skips section 4 — fewer Key Vault reads on their page load.
@@ -707,6 +709,8 @@ def index():
     zoom_sdk_secret = _snap_value(snap, "zoom-sdk-secret") or ""
     recording_storage_account = _snap_value(snap, "recording-storage-account") or ""
     recording_storage_container = _snap_value(snap, "recording-storage-container") or ""
+    smtp_user = _snap_value(snap, "smtp-user") or ""
+    smtp_password = _snap_value(snap, "smtp-password") or ""
 
     oauth = {
         "google_app": bool(google_client_id and google_client_secret),
@@ -782,6 +786,11 @@ def index():
         recording_storage_account_masked=mask(recording_storage_account),
         recording_storage_container_set=bool(recording_storage_container),
         recording_storage_container_masked=mask(recording_storage_container),
+        smtp_user_set=bool(smtp_user),
+        smtp_user_value=smtp_user,
+        smtp_password_set=bool(smtp_password),
+        smtp_password_masked=mask(smtp_password),
+        alert_recipient=notify.ALERT_TO,
         zoom_server=zoom_server,
         zoom_key=ingest,
         youtube_masked=mask(yt),
@@ -1363,6 +1372,66 @@ def save_oauth_credentials():
             flash("OAuth app credentials saved to Key Vault.", "ok")
     except Exception as exc:  # noqa: BLE001
         flash(f"Could not save credentials: {exc}", "error")
+    return redirect(url_for("index"))
+
+
+@app.post("/email/credentials")
+@owner_required
+def save_email_credentials():
+    """Store the Gmail account and App Password used for alert emails."""
+    user = request.form.get("smtp_user", "").strip()
+    # Google shows App Passwords in groups of four; the spaces are display only.
+    password = request.form.get("smtp_password", "").replace(" ", "").strip()
+
+    to_save: dict[str, str] = {}
+    if user:
+        to_save["smtp-user"] = user
+    if password:
+        to_save["smtp-password"] = password
+    if not to_save:
+        flash("Enter a Gmail address and/or an App Password.", "error")
+        return redirect(url_for("index"))
+
+    if password and len(password) != 16:
+        flash(
+            f"That App Password is {len(password)} characters; Google's are 16 letters. "
+            "Paste the one from Google Account \u203a Security \u203a App passwords, "
+            "not your Gmail password.",
+            "error",
+        )
+        return redirect(url_for("index"))
+
+    try:
+        set_secrets(to_save)
+    except Exception as exc:  # noqa: BLE001
+        flash(f"Could not save email settings: {exc}", "error")
+        return redirect(url_for("index"))
+
+    ok, detail = notify.check_credentials(get_secret_optional)
+    if ok:
+        flash("Email settings saved and Gmail accepted them.", "ok")
+    else:
+        flash(f"Saved, but Gmail rejected them: {detail}", "error")
+    return redirect(url_for("index"))
+
+
+@app.post("/email/test")
+@owner_required
+def send_test_email():
+    """Prove alerts work end to end, so a broken password is obvious now."""
+    sent = notify.send_alert(
+        get_secret_optional,
+        subject="ISKCON stream: test email",
+        body=(
+            "This is a test from the owner console.\n\n"
+            "If you are reading it, recording and streaming alerts will reach you."
+        ),
+    )
+    if sent:
+        flash(f"Test email sent to {notify.ALERT_TO}.", "ok")
+    else:
+        ok, detail = notify.check_credentials(get_secret_optional)
+        flash(f"Test email failed: {detail}" if not ok else "Test email failed. See logs.", "error")
     return redirect(url_for("index"))
 
 

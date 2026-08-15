@@ -540,6 +540,40 @@
         <button type="submit">Save app credentials</button>
       </form>
 
+      <h3 id="email-alerts-heading">Email alerts</h3>
+      <p class="hint">
+        Where recording and streaming alerts are sent. Gmail needs an
+        <strong>App Password</strong>, not your normal password: Google Account
+        &rsaquo; Security &rsaquo; App passwords. 2-Step Verification must stay
+        on, because turning it off deletes every App Password.
+      </p>
+      <p class="status" aria-live="polite">
+        Sends from: {% if smtp_user_set %}{{ smtp_user_value }}{% else %}not set{% endif %}
+        · App Password: {% if smtp_password_set %}set ({{ smtp_password_masked }}){% else %}not set{% endif %}
+        · Alerts go to: {{ alert_recipient }}
+      </p>
+      <form method="post" action="{{ url_for('save_email_credentials') }}" class="card-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label for="smtp_user">Gmail address</label>
+        <input id="smtp_user" name="smtp_user" type="email" autocomplete="off" placeholder="Leave blank to keep current">
+        <label for="smtp_password">Gmail App Password</label>
+        <input
+          id="smtp_password"
+          name="smtp_password"
+          type="password"
+          autocomplete="off"
+          placeholder="16 letters, spaces are fine"
+          spellcheck="false"
+          aria-describedby="smtp_password_help"
+        >
+        <p id="smtp_password_help" class="hint">Saving checks the password with Gmail straight away.</p>
+        <button type="submit">Save email settings</button>
+      </form>
+      <form method="post" action="{{ url_for('send_test_email') }}" class="card-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="ghost">Send test email</button>
+      </form>
+
       <h3 id="tips-heading">Before you go live</h3>
       <ol>
         <li>One-time: connect YouTube and Facebook, and save the Zoom API app credentials (above).</li>
