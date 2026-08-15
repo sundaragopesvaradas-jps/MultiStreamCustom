@@ -47,6 +47,16 @@
       {% endif %}
     {% endwith %}
 
+    {% if prepare_ready %}
+    <div class="banner banner-ok" role="status">
+      <p>{{ prepare_message }}</p>
+    </div>
+    {% else %}
+    <div class="banner banner-warn" role="alert">
+      <p>{{ prepare_message }}</p>
+    </div>
+    {% endif %}
+
     {# —— 1. Start / stop Zoom streaming —— #}
     <section class="zone zone-start" aria-labelledby="golive-heading">
       <h2 id="golive-heading">1 · Start &amp; stop streaming</h2>
@@ -293,16 +303,6 @@
         >
         <button type="submit">Save PINs</button>
       </form>
-
-      {% if not prepare_ready %}
-      <div class="banner banner-warn" role="status">
-        <p><strong>Lives may need prepare.</strong> {{ prepare_message }}</p>
-      </div>
-      {% else %}
-      <div class="banner banner-ok" role="status">
-        <p><strong>Lives look ready.</strong> {{ prepare_message }}</p>
-      </div>
-      {% endif %}
 
       <h3 id="oauth-connect-heading">Connect platforms</h3>
       <div class="status" role="status">
