@@ -72,13 +72,8 @@ YT_URL="rtmp://a.rtmp.youtube.com/live2/${YT_KEY}"
 # because the API binds the key to a specific ingest host.
 FB_URL="$(get_secret_optional facebook-stream-url)"
 if [[ -z "$FB_URL" ]]; then
-  if [[ "$FB_KEY" == *\?* ]]; then
-    # API-issued key (has a query string) — belongs to the api ingest host.
-    FB_URL="rtmps://rtmp-api.facebook.com:443/rtmp/${FB_KEY}"
-  else
-    # Key pasted by hand from Facebook Live Producer.
-    FB_URL="rtmps://live-api-s.facebook.com:443/rtmp/${FB_KEY}"
-  fi
+  # No stored URL (key pasted by hand, or set before we started saving it).
+  FB_URL="rtmps://live-api-s.facebook.com:443/rtmp/${FB_KEY}"
 fi
 
 umask 077
