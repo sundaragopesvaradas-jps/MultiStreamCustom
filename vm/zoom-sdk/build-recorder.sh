@@ -113,6 +113,20 @@ fi
 shopt -u nullglob
 
 echo "==> Patching sample for display_name + any-resolution capture"
+# Sample CMakeLists copies config.txt into the build tree — create a stub if missing.
+if [[ ! -f "$DEMO/config.txt" ]]; then
+  cat > "$DEMO/config.txt" <<'EOF'
+meeting_number: "0"
+token: ""
+meeting_password: ""
+recording_token: ""
+display_name: "ISKCON Deoghar Archive"
+GetVideoRawData: "true"
+GetAudioRawData: "true"
+SendVideoRawData: "false"
+SendAudioRawData: "false"
+EOF
+fi
 python3 - <<'PY'
 from pathlib import Path
 
@@ -147,9 +161,11 @@ cpp = cpp.replace(
     'withoutloginParam.userName = "LinuxChun";',
     'withoutloginParam.userName = display_name.empty() ? "ISKCON Deoghar Archive" : display_name.c_str();',
 )
-# Start muted/video-off so the bot is less disruptive
-cpp = cpp.replace("withoutloginParam.isVideoOff = false;", "withoutloginParam.isVideoOff = true;")
-cpp = cpp.replace("withoutloginParam.isAudioOff = false;", "withoutloginParam.isAudioOff = true;")
+# Fix Zoom sample bug: `!recording_token.size() == 0` is always false.
+cpp = cpp.replace(
+    "if (!recording_token.size() == 0)",
+    "if (recording_token.size() != 0)",
+)
 
 (demo / "meeting_sdk_demo.cpp").write_text(cpp, encoding="utf-8")
 
