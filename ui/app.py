@@ -107,8 +107,52 @@ def set_secret(name: str, value: str) -> None:
     keyvault.set_secret(kv_name(), name, value)
 
 
+def set_secrets(values: dict[str, str]) -> None:
+    keyvault.set_secrets(kv_name(), values)
+
+
 def get_secret_optional(name: str) -> str | None:
     return platforms.get_optional(get_secret, name)
+
+
+# Everything the control page needs in one parallel Key Vault round-trip.
+INDEX_SECRET_NAMES = (
+    "ingest-stream-key",
+    "youtube-stream-key",
+    "facebook-stream-key",
+    "google-oauth-client-id",
+    "google-oauth-client-secret",
+    "facebook-app-id",
+    "facebook-app-secret",
+    "facebook-login-config-id",
+    "facebook-page-token",
+    "facebook-page-name",
+    "youtube-oauth-tokens",
+    "default-stream-title",
+    "default-stream-description",
+    "stream-title",
+    "stream-description",
+    "youtube-watch-url",
+    "facebook-watch-url",
+    "lives-prepared-at",
+    "youtube-broadcast-id",
+    "facebook-live-id",
+    "zoom-account-id",
+    "zoom-client-id",
+    "zoom-client-secret",
+    "zoom-meeting-id",
+)
+
+
+def _snap_value(snap: dict[str, str | None], name: str) -> str | None:
+    value = (snap.get(name) or "").strip()
+    if not value or value in {"REPLACE_ME", "MOVED_TO_HASH"}:
+        return None
+    return value
+
+
+def index_secret_snapshot() -> dict[str, str | None]:
+    return keyvault.get_secrets(kv_name(), INDEX_SECRET_NAMES)
 
 
 def public_base() -> str:
@@ -517,41 +561,68 @@ def logout():
 @app.get("/")
 @login_required
 def index():
-    try:
-        ingest = get_secret("ingest-stream-key")
-        yt = get_secret("youtube-stream-key")
-        fb = get_secret("facebook-stream-key")
-    except Exception as exc:  # noqa: BLE001
-        flash(f"Key Vault read failed: {exc}", "error")
-        ingest, yt, fb = "", "REPLACE_ME", "REPLACE_ME"
+    snap = index_secret_snapshot()
+    ingest = _snap_value(snap, "ingest-stream-key") or ""
+    yt = _snap_value(snap, "youtube-stream-key") or "REPLACE_ME"
+    fb = _snap_value(snap, "facebook-stream-key") or "REPLACE_ME"
+    if not ingest and yt == "REPLACE_ME" and fb == "REPLACE_ME":
+        # Distinguish total KV failure from empty vault — retry once for the
+        # three critical keys so the flash still surfaces a real outage.
+        try:
+            ingest = get_secret("ingest-stream-key")
+            yt = get_secret("youtube-stream-key")
+            fb = get_secret("facebook-stream-key")
+        except Exception as exc:  # noqa: BLE001
+            flash(f"Key Vault read failed: {exc}", "error")
+            ingest, yt, fb = "", "REPLACE_ME", "REPLACE_ME"
 
     host = public_host()
     zoom_server = f"rtmp://{host}/live"
     enabled = read_enabled()
-    oauth = platforms.oauth_configured(get_secret)
-    default_title, default_description = platforms.default_live_metadata(get_secret)
-    title = get_secret_optional("stream-title") or default_title
-    description = get_secret_optional("stream-description") or default_description
-    yt_watch = get_secret_optional("youtube-watch-url") or ""
-    fb_watch = get_secret_optional("facebook-watch-url") or ""
-    fb_page = get_secret_optional("facebook-page-name") or ""
+
+    google_client_id = _snap_value(snap, "google-oauth-client-id") or ""
+    google_client_secret = _snap_value(snap, "google-oauth-client-secret") or ""
+    facebook_app_id = _snap_value(snap, "facebook-app-id") or ""
+    facebook_app_secret = _snap_value(snap, "facebook-app-secret") or ""
+    facebook_config_id = _snap_value(snap, "facebook-login-config-id") or ""
+    zoom_account_id = _snap_value(snap, "zoom-account-id") or ""
+    zoom_client_id = _snap_value(snap, "zoom-client-id") or ""
+    zoom_client_secret = _snap_value(snap, "zoom-client-secret") or ""
+    zoom_meeting_id = _snap_value(snap, "zoom-meeting-id") or ""
+
+    oauth = {
+        "google_app": bool(google_client_id and google_client_secret),
+        "facebook_app": bool(facebook_app_id and facebook_app_secret),
+        "youtube_connected": bool(_snap_value(snap, "youtube-oauth-tokens")),
+        "facebook_connected": bool(_snap_value(snap, "facebook-page-token")),
+    }
+    default_title = (
+        _snap_value(snap, "default-stream-title") or platforms.DEFAULT_LIVE_TITLE
+    )
+    default_description = (
+        _snap_value(snap, "default-stream-description")
+        or platforms.DEFAULT_LIVE_DESCRIPTION
+    )
+    title = _snap_value(snap, "stream-title") or default_title
+    description = _snap_value(snap, "stream-description") or default_description
+    yt_watch = _snap_value(snap, "youtube-watch-url") or ""
+    fb_watch = _snap_value(snap, "facebook-watch-url") or ""
+    fb_page = _snap_value(snap, "facebook-page-name") or ""
+
+    # Cheap readiness from the same snapshot — no extra Key Vault round-trips.
+    def snap_get(name: str) -> str:
+        value = _snap_value(snap, name)
+        if value is None:
+            raise keyvault.KeyVaultError(f"Secret {name} not found.")
+        return value
+
     readiness = platforms.prepare_readiness(
-        get_secret,
+        snap_get,
         set_secret,
         youtube_enabled=enabled["youtube"],
         facebook_enabled=enabled["facebook"],
         verify_apis=False,
     )
-
-    google_client_id = get_secret_optional("google-oauth-client-id") or ""
-    google_client_secret = get_secret_optional("google-oauth-client-secret") or ""
-    facebook_app_id = get_secret_optional("facebook-app-id") or ""
-    facebook_app_secret = get_secret_optional("facebook-app-secret") or ""
-    facebook_config_id = get_secret_optional("facebook-login-config-id") or ""
-    zoom_account_id = get_secret_optional("zoom-account-id") or ""
-    zoom_client_id = get_secret_optional("zoom-client-id") or ""
-    zoom_client_secret = get_secret_optional("zoom-client-secret") or ""
-    zoom_meeting_id = get_secret_optional("zoom-meeting-id") or ""
 
     return render_template(
         "index.html",
@@ -702,11 +773,15 @@ def go_live():
     try:
         write_enabled(youtube, facebook)
         # Same text serves this stream and any later auto-prepare.
-        set_secret("stream-title", title)
-        set_secret("stream-description", description or title)
-        set_secret("default-stream-title", title)
-        set_secret("default-stream-description", description or title)
-        set_secret("zoom-meeting-id", meeting_id)
+        set_secrets(
+            {
+                "stream-title": title,
+                "stream-description": description or title,
+                "default-stream-title": title,
+                "default-stream-description": description or title,
+                "zoom-meeting-id": meeting_id,
+            }
+        )
     except Exception as exc:  # noqa: BLE001
         flash(f"Could not save settings: {exc}", "error")
         return redirect(url_for("index"))
@@ -784,23 +859,22 @@ def update_keys():
     new_pin = request.form.get("new_pin", "").strip()
 
     try:
+        batch: dict[str, str] = {}
         if yt:
-            set_secret("youtube-stream-key", yt)
+            batch["youtube-stream-key"] = yt
         if fb:
-            set_secret("facebook-stream-key", fb)
+            batch["facebook-stream-key"] = fb
         if new_pin:
             if not new_pin.isdigit() or not (4 <= len(new_pin) <= 12):
                 flash("PIN must be 4–12 digits.", "error")
                 return redirect(url_for("index"))
             pin_hash = hash_pin(new_pin)
-            set_secret("ui-pin-hash", pin_hash)
-            # Remove plaintext PIN if present
-            try:
-                set_secret("ui-pin", "MOVED_TO_HASH")
-            except Exception:  # noqa: BLE001
-                pass
+            batch["ui-pin-hash"] = pin_hash
+            batch["ui-pin"] = "MOVED_TO_HASH"
             os.environ["UI_PIN_HASH"] = pin_hash
             os.environ.pop("UI_PIN", None)
+        if batch:
+            set_secrets(batch)
         sync_secrets()
         flash("Saved. New streams will use the updated keys.", "ok")
     except Exception as exc:  # noqa: BLE001
@@ -817,8 +891,7 @@ def save_metadata():
         flash("Title is required.", "error")
         return redirect(url_for("index"))
     try:
-        set_secret("stream-title", title)
-        set_secret("stream-description", description)
+        set_secrets({"stream-title": title, "stream-description": description})
         flash("Title and description saved.", "ok")
     except Exception as exc:  # noqa: BLE001
         flash(f"Could not save metadata: {exc}", "error")
@@ -835,8 +908,12 @@ def save_defaults():
         flash("Default title is required.", "error")
         return redirect(url_for("index"))
     try:
-        set_secret("default-stream-title", title)
-        set_secret("default-stream-description", description or title)
+        set_secrets(
+            {
+                "default-stream-title": title,
+                "default-stream-description": description or title,
+            }
+        )
         flash("Default title and description saved for auto-prepare.", "ok")
     except Exception as exc:  # noqa: BLE001
         flash(f"Could not save defaults: {exc}", "error")
@@ -859,8 +936,7 @@ def prepare_live():
         return redirect(url_for("index"))
 
     try:
-        set_secret("stream-title", title)
-        set_secret("stream-description", description)
+        set_secrets({"stream-title": title, "stream-description": description})
 
         # YouTube and Facebook are independent round trips; run them together
         # so the operator waits for the slower one rather than their sum.
@@ -907,8 +983,7 @@ def push_metadata():
 
     enabled = read_enabled()
     try:
-        set_secret("stream-title", title)
-        set_secret("stream-description", description)
+        set_secrets({"stream-title": title, "stream-description": description})
     except Exception as exc:  # noqa: BLE001
         flash(f"Could not save metadata: {exc}", "error")
         return redirect(url_for("index"))
@@ -1008,7 +1083,7 @@ def oauth_facebook_callback():
 @app.post("/oauth/credentials")
 @login_required
 def save_oauth_credentials():
-    """Store Google/Meta app credentials (one-time admin setup)."""
+    """Store Google/Meta/Zoom app credentials (one-time admin setup)."""
     fields = {
         "google-oauth-client-id": request.form.get("google_client_id", "").strip(),
         "google-oauth-client-secret": request.form.get("google_client_secret", "").strip(),
@@ -1020,14 +1095,11 @@ def save_oauth_credentials():
         "zoom-client-secret": request.form.get("zoom_client_secret", "").strip(),
     }
     try:
-        saved = []
-        for name, value in fields.items():
-            if value:
-                set_secret(name, value)
-                saved.append(name)
-        if not saved:
+        to_save = {name: value for name, value in fields.items() if value}
+        if not to_save:
             flash("Enter at least one credential value.", "error")
         else:
+            set_secrets(to_save)
             flash("OAuth app credentials saved to Key Vault.", "ok")
     except Exception as exc:  # noqa: BLE001
         flash(f"Could not save credentials: {exc}", "error")
