@@ -143,6 +143,28 @@ INDEX_SECRET_NAMES = (
     "zoom-meeting-id",
 )
 
+# Manager console skips section 4 — fewer Key Vault reads on their page load.
+MANAGER_SECRET_NAMES = (
+    "youtube-stream-key",
+    "facebook-stream-key",
+    "default-stream-title",
+    "default-stream-description",
+    "stream-title",
+    "stream-description",
+    "youtube-watch-url",
+    "facebook-watch-url",
+    "lives-prepared-at",
+    "youtube-broadcast-id",
+    "facebook-live-id",
+    "zoom-account-id",
+    "zoom-client-id",
+    "zoom-client-secret",
+    "zoom-meeting-id",
+)
+
+ROLE_OWNER = "owner"
+ROLE_MANAGER = "manager"
+
 
 def _snap_value(snap: dict[str, str | None], name: str) -> str | None:
     value = (snap.get(name) or "").strip()
@@ -151,8 +173,92 @@ def _snap_value(snap: dict[str, str | None], name: str) -> str | None:
     return value
 
 
-def index_secret_snapshot() -> dict[str, str | None]:
-    return keyvault.get_secrets(kv_name(), INDEX_SECRET_NAMES)
+def index_secret_snapshot(*, owner: bool) -> dict[str, str | None]:
+    names = INDEX_SECRET_NAMES if owner else MANAGER_SECRET_NAMES
+    return keyvault.get_secrets(kv_name(), names)
+
+
+def _pin_material(env_hash: str, env_plain: str, secret_hash: str, secret_plain: str) -> str | None:
+    if os.environ.get(env_hash):
+        return os.environ[env_hash]
+    try:
+        return get_secret(secret_hash)
+    except Exception:  # noqa: BLE001
+        plain = os.environ.get(env_plain)
+        if plain:
+            return plain
+        try:
+            value = get_secret(secret_plain)
+        except Exception:  # noqa: BLE001
+            return None
+        if not value or value == "MOVED_TO_HASH":
+            return None
+        return value
+
+
+def manager_pin_material() -> str | None:
+    """Existing team PIN — becomes the manager account once an owner PIN exists."""
+    return _pin_material("UI_PIN_HASH", "UI_PIN", "ui-pin-hash", "ui-pin")
+
+
+def owner_pin_material() -> str | None:
+    return _pin_material(
+        "UI_OWNER_PIN_HASH", "UI_OWNER_PIN", "ui-owner-pin-hash", "ui-owner-pin"
+    )
+
+
+def owner_pin_configured() -> bool:
+    return bool(owner_pin_material())
+
+
+def resolve_pin_role(candidate: str) -> str | None:
+    """Return owner/manager role for a PIN, or None if it does not match."""
+    owner_mat = owner_pin_material()
+    if owner_mat and verify_pin(candidate, owner_mat):
+        return ROLE_OWNER
+
+    manager_mat = manager_pin_material()
+    if not manager_mat or not verify_pin(candidate, manager_mat):
+        return None
+
+    # Until an owner PIN is created, the existing PIN keeps full access so the
+    # operator is never locked out of section 4. After owner PIN exists, this
+    # same PIN is manager-only.
+    if owner_mat:
+        return ROLE_MANAGER
+    return ROLE_OWNER
+
+
+def session_role() -> str:
+    role = session.get("role") or ROLE_MANAGER
+    return role if role in {ROLE_OWNER, ROLE_MANAGER} else ROLE_MANAGER
+
+
+def is_owner() -> bool:
+    return session.get("authed") and session_role() == ROLE_OWNER
+
+
+def login_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not session.get("authed"):
+            return redirect(url_for("login"))
+        return view(*args, **kwargs)
+
+    return wrapped
+
+
+def owner_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not session.get("authed"):
+            return redirect(url_for("login"))
+        if not is_owner():
+            flash("Only the owner can change those settings.", "error")
+            return redirect(url_for("index"))
+        return view(*args, **kwargs)
+
+    return wrapped
 
 
 def public_base() -> str:
@@ -209,29 +315,6 @@ def verify_pin(candidate: str, stored: str) -> bool:
         return hmac.compare_digest(got, expected)
     # Legacy plaintext (migrate on successful login / harden script)
     return hmac.compare_digest(candidate, stored)
-
-
-def current_pin_material() -> str:
-    if os.environ.get("UI_PIN_HASH"):
-        return os.environ["UI_PIN_HASH"]
-    try:
-        return get_secret("ui-pin-hash")
-    except Exception:  # noqa: BLE001
-        return os.environ.get("UI_PIN") or get_secret("ui-pin")
-
-
-def pin_ok(candidate: str) -> bool:
-    return verify_pin(candidate, current_pin_material())
-
-
-def login_required(view):
-    @wraps(view)
-    def wrapped(*args, **kwargs):
-        if not session.get("authed"):
-            return redirect(url_for("login"))
-        return view(*args, **kwargs)
-
-    return wrapped
 
 
 def public_host() -> str:
@@ -530,11 +613,11 @@ def login_post():
 
     pin = request.form.get("pin", "")
     try:
-        ok = pin_ok(pin)
+        role = resolve_pin_role(pin)
     except Exception as exc:  # noqa: BLE001
         flash(f"Could not verify PIN: {exc}", "error")
         return render_template("login.html", login_locked=False, lock_message=""), 500
-    if not ok:
+    if not role:
         just_locked, fail_msg = record_login_failure(ip)
         flash(fail_msg, "error")
         return (
@@ -548,6 +631,7 @@ def login_post():
     clear_login_failures(ip)
     session.clear()
     session["authed"] = True
+    session["role"] = role
     session.permanent = True
     return redirect(url_for("index"))
 
@@ -561,11 +645,12 @@ def logout():
 @app.get("/")
 @login_required
 def index():
-    snap = index_secret_snapshot()
+    owner = is_owner()
+    snap = index_secret_snapshot(owner=owner)
     ingest = _snap_value(snap, "ingest-stream-key") or ""
     yt = _snap_value(snap, "youtube-stream-key") or "REPLACE_ME"
     fb = _snap_value(snap, "facebook-stream-key") or "REPLACE_ME"
-    if not ingest and yt == "REPLACE_ME" and fb == "REPLACE_ME":
+    if owner and not ingest and yt == "REPLACE_ME" and fb == "REPLACE_ME":
         # Distinguish total KV failure from empty vault — retry once for the
         # three critical keys so the flash still surfaces a real outage.
         try:
@@ -626,6 +711,9 @@ def index():
 
     return render_template(
         "index.html",
+        is_owner=owner,
+        role=session_role(),
+        owner_pin_configured=owner_pin_configured(),
         zoom_api_ready=bool(zoom_account_id and zoom_client_id and zoom_client_secret),
         zoom_meeting_id=zoom_meeting_id,
         zoom_account_id_set=bool(zoom_account_id),
@@ -852,11 +940,10 @@ def stop_live():
 
 
 @app.post("/keys")
-@login_required
+@owner_required
 def update_keys():
     yt = request.form.get("youtube_stream_key", "").strip()
     fb = request.form.get("facebook_stream_key", "").strip()
-    new_pin = request.form.get("new_pin", "").strip()
 
     try:
         batch: dict[str, str] = {}
@@ -864,21 +951,65 @@ def update_keys():
             batch["youtube-stream-key"] = yt
         if fb:
             batch["facebook-stream-key"] = fb
-        if new_pin:
-            if not new_pin.isdigit() or not (4 <= len(new_pin) <= 12):
-                flash("PIN must be 4–12 digits.", "error")
-                return redirect(url_for("index"))
-            pin_hash = hash_pin(new_pin)
-            batch["ui-pin-hash"] = pin_hash
-            batch["ui-pin"] = "MOVED_TO_HASH"
-            os.environ["UI_PIN_HASH"] = pin_hash
-            os.environ.pop("UI_PIN", None)
         if batch:
             set_secrets(batch)
         sync_secrets()
         flash("Saved. New streams will use the updated keys.", "ok")
     except Exception as exc:  # noqa: BLE001
         flash(f"Update failed: {exc}", "error")
+    return redirect(url_for("index"))
+
+
+@app.post("/pins")
+@owner_required
+def update_pins():
+    """Owner can set the owner PIN and/or rotate the manager PIN."""
+    owner_pin = request.form.get("owner_pin", "").strip()
+    manager_pin = request.form.get("manager_pin", "").strip()
+    if not owner_pin and not manager_pin:
+        flash("Enter a new owner PIN and/or manager PIN.", "error")
+        return redirect(url_for("index"))
+
+    def _valid(pin: str) -> bool:
+        return pin.isdigit() and 4 <= len(pin) <= 12
+
+    try:
+        batch: dict[str, str] = {}
+        if owner_pin:
+            if not _valid(owner_pin):
+                flash("Owner PIN must be 4–12 digits.", "error")
+                return redirect(url_for("index"))
+            owner_hash = hash_pin(owner_pin)
+            batch["ui-owner-pin-hash"] = owner_hash
+            batch["ui-owner-pin"] = "MOVED_TO_HASH"
+            os.environ["UI_OWNER_PIN_HASH"] = owner_hash
+            os.environ.pop("UI_OWNER_PIN", None)
+        if manager_pin:
+            if not _valid(manager_pin):
+                flash("Manager PIN must be 4–12 digits.", "error")
+                return redirect(url_for("index"))
+            manager_hash = hash_pin(manager_pin)
+            batch["ui-pin-hash"] = manager_hash
+            batch["ui-pin"] = "MOVED_TO_HASH"
+            os.environ["UI_PIN_HASH"] = manager_hash
+            os.environ.pop("UI_PIN", None)
+        set_secrets(batch)
+        keyvault.invalidate("ui-owner-pin-hash", "ui-pin-hash", "ui-owner-pin", "ui-pin")
+        if owner_pin and manager_pin:
+            flash(
+                "Owner and manager PINs updated. Share only the manager PIN with operators.",
+                "ok",
+            )
+        elif owner_pin:
+            flash(
+                "Owner PIN saved. The existing team PIN is now the manager PIN "
+                "(sections 1–3 only).",
+                "ok",
+            )
+        else:
+            flash("Manager PIN updated.", "ok")
+    except Exception as exc:  # noqa: BLE001
+        flash(f"Could not update PINs: {exc}", "error")
     return redirect(url_for("index"))
 
 
@@ -899,7 +1030,7 @@ def save_metadata():
 
 
 @app.post("/defaults")
-@login_required
+@owner_required
 def save_defaults():
     """Defaults used when Zoom goes live without Prepare live."""
     title = request.form.get("default_title", "").strip()
@@ -921,7 +1052,7 @@ def save_defaults():
 
 
 @app.post("/prepare-live")
-@login_required
+@owner_required
 @limiter.limit("10 per hour")
 def prepare_live():
     title = request.form.get("title", "").strip()
@@ -1017,7 +1148,7 @@ def push_metadata():
 
 
 @app.post("/oauth/youtube/start")
-@login_required
+@owner_required
 def oauth_youtube_start():
     try:
         state = platforms.new_oauth_state()
@@ -1033,6 +1164,9 @@ def oauth_youtube_start():
 def oauth_youtube_callback():
     if not session.get("authed"):
         return redirect(url_for("login"))
+    if not is_owner():
+        flash("Only the owner can connect platforms.", "error")
+        return redirect(url_for("index"))
     if request.args.get("state") != session.get("oauth_yt_state"):
         flash("YouTube connect failed: invalid OAuth state.", "error")
         return redirect(url_for("index"))
@@ -1049,7 +1183,7 @@ def oauth_youtube_callback():
 
 
 @app.post("/oauth/facebook/start")
-@login_required
+@owner_required
 def oauth_facebook_start():
     try:
         state = platforms.new_oauth_state()
@@ -1065,6 +1199,9 @@ def oauth_facebook_start():
 def oauth_facebook_callback():
     if not session.get("authed"):
         return redirect(url_for("login"))
+    if not is_owner():
+        flash("Only the owner can connect platforms.", "error")
+        return redirect(url_for("index"))
     if request.args.get("state") != session.get("oauth_fb_state"):
         flash("Facebook connect failed: invalid OAuth state.", "error")
         return redirect(url_for("index"))
@@ -1081,7 +1218,7 @@ def oauth_facebook_callback():
 
 
 @app.post("/oauth/credentials")
-@login_required
+@owner_required
 def save_oauth_credentials():
     """Store Google/Meta/Zoom app credentials (one-time admin setup)."""
     fields = {

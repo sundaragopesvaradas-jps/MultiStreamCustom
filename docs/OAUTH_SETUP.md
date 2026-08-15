@@ -104,7 +104,12 @@ named `facebook-graph-version` (for example `v26.0`) to move without a code chan
    to rename without rotating keys.
 4. Use a watch URL from the UI for Zoom’s “Live streaming page URL”.
 
-Anyone with the PIN can change title/description afterward; they do not need your laptop. They use the same stored OAuth tokens on the server.
+Anyone with the **manager PIN** can start/stop streaming and update title/destinations
+mid-stream. Only the **owner PIN** can open section 4 (OAuth apps, keys, prepare live).
+
+Until an owner PIN is created, the existing team PIN still has full (owner) access so
+you are not locked out. After you save an owner PIN in section 4, that same team PIN
+becomes manager-only.
 
 ## 4) Login lockout email
 

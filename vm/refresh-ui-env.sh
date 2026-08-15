@@ -14,11 +14,25 @@ if az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name ui-pin-hash --q
 fi
 rm -f /tmp/ms-pin-hash
 
+OWNER_PIN_HASH=""
+if az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name ui-owner-pin-hash --query value -o tsv >/tmp/ms-owner-pin-hash 2>/dev/null; then
+  OWNER_PIN_HASH="$(cat /tmp/ms-owner-pin-hash)"
+fi
+rm -f /tmp/ms-owner-pin-hash
+
 PIN_PLAIN=""
 if [[ -z "$PIN_HASH" || "$PIN_HASH" == "MOVED_TO_HASH" ]]; then
   PIN_PLAIN="$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name ui-pin --query value -o tsv 2>/dev/null || true)"
   if [[ "$PIN_PLAIN" == "MOVED_TO_HASH" ]]; then
     PIN_PLAIN=""
+  fi
+fi
+
+OWNER_PIN_PLAIN=""
+if [[ -z "$OWNER_PIN_HASH" || "$OWNER_PIN_HASH" == "MOVED_TO_HASH" ]]; then
+  OWNER_PIN_PLAIN="$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name ui-owner-pin --query value -o tsv 2>/dev/null || true)"
+  if [[ "$OWNER_PIN_PLAIN" == "MOVED_TO_HASH" ]]; then
+    OWNER_PIN_PLAIN=""
   fi
 fi
 
@@ -47,7 +61,7 @@ if [[ -f "$FQDN_CERT" ]] || [[ -f "/etc/letsencrypt/live/${PUBLIC_HOST}/fullchai
   HTTPS_ENABLED=1
 fi
 
-export PIN_HASH PIN_PLAIN SECRET KEY_VAULT_NAME PUBLIC_HOST HTTPS_ENABLED
+export PIN_HASH PIN_PLAIN OWNER_PIN_HASH OWNER_PIN_PLAIN SECRET KEY_VAULT_NAME PUBLIC_HOST HTTPS_ENABLED
 umask 077
 python3 - <<'PY'
 import os
@@ -59,6 +73,8 @@ def q(v: str) -> str:
 lines = [
     f"UI_PIN_HASH={q(os.environ.get('PIN_HASH', ''))}",
     f"UI_PIN={q(os.environ.get('PIN_PLAIN', ''))}",
+    f"UI_OWNER_PIN_HASH={q(os.environ.get('OWNER_PIN_HASH', ''))}",
+    f"UI_OWNER_PIN={q(os.environ.get('OWNER_PIN_PLAIN', ''))}",
     f"FLASK_SECRET_KEY={q(os.environ['SECRET'])}",
     f"KEY_VAULT_NAME={q(os.environ['KEY_VAULT_NAME'])}",
     f"PUBLIC_HOST={q(os.environ.get('PUBLIC_HOST', ''))}",

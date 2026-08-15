@@ -48,6 +48,7 @@ _STABLE_SECRETS = frozenset(
         "zoom-client-id",
         "zoom-client-secret",
         "ui-pin-hash",
+        "ui-owner-pin-hash",
         "ingest-stream-key",
     }
 )

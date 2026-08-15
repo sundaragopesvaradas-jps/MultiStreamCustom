@@ -14,6 +14,9 @@
         <p class="lede">Zoom → YouTube + Facebook</p>
       </div>
       <div class="top-actions">
+        <span class="role-pill" aria-label="Signed in as {{ role }}">
+          {% if is_owner %}Owner{% else %}Manager{% endif %}
+        </span>
         <a class="ghost-link" href="{{ url_for('history') }}">Stream history</a>
         <form method="post" action="{{ url_for('logout') }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -241,12 +244,55 @@
       <p><a class="ghost-link" href="{{ url_for('history') }}">See full history and error details</a></p>
     </section>
 
-    {# —— 4. Advanced / rarely touched —— #}
+    {# —— 4. Advanced / rarely touched (owner only) —— #}
+    {% if is_owner %}
     <section class="zone zone-advanced" aria-labelledby="advanced-heading">
       <h2 id="advanced-heading">4 · Do not update these settings unless you are sure</h2>
       <p class="hint">
-        One-time setup, manual keys, and fallback tools. Day-to-day streaming only needs sections 1–3.
+        Owner-only. One-time setup, manual keys, and fallback tools. Managers only see sections 1–3.
       </p>
+
+      {% if not owner_pin_configured %}
+      <div class="banner banner-warn" role="status">
+        <p>
+          <strong>Create an owner PIN below.</strong>
+          Until you do, this login still has full access. After you save an owner PIN,
+          the existing team PIN becomes the <strong>manager</strong> PIN (start/stop only).
+        </p>
+      </div>
+      {% endif %}
+
+      <h3 id="pins-heading">Owner &amp; manager PINs</h3>
+      <p class="hint">
+        Owner PIN unlocks this full page. Manager PIN unlocks sections 1–3 only.
+        Leave a field blank to keep the current value.
+      </p>
+      <form method="post" action="{{ url_for('update_pins') }}" class="card-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label for="owner_pin">New owner PIN</label>
+        <input
+          id="owner_pin"
+          name="owner_pin"
+          type="password"
+          inputmode="numeric"
+          autocomplete="new-password"
+          minlength="4"
+          maxlength="12"
+          placeholder="4–12 digits"
+        >
+        <label for="manager_pin">New manager PIN</label>
+        <input
+          id="manager_pin"
+          name="manager_pin"
+          type="password"
+          inputmode="numeric"
+          autocomplete="new-password"
+          minlength="4"
+          maxlength="12"
+          placeholder="4–12 digits — shared with operators"
+        >
+        <button type="submit">Save PINs</button>
+      </form>
 
       {% if not prepare_ready %}
       <div class="banner banner-warn" role="status">
@@ -352,17 +398,6 @@
           placeholder="Paste new Facebook key"
           spellcheck="false"
         >
-        <label for="new_pin">Change PIN (optional)</label>
-        <input
-          id="new_pin"
-          name="new_pin"
-          type="password"
-          inputmode="numeric"
-          autocomplete="new-password"
-          minlength="4"
-          maxlength="12"
-          placeholder="4–12 digits"
-        >
         <button type="submit">Save keys</button>
       </form>
 
@@ -424,6 +459,12 @@
         <li>Ending the Zoom meeting ends everything. No stop click needed.</li>
       </ol>
     </section>
+    {% else %}
+    <p class="hint manager-note">
+      Signed in as <strong>manager</strong> — start/stop and mid-stream updates only.
+      Owner settings are hidden.
+    </p>
+    {% endif %}
   </main>
   <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
