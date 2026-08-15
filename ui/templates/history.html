@@ -3,18 +3,18 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>MultiStream — Stream history</title>
+  <title>ISKCON Deoghar Multistreaming — History</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
 <body>
   <main class="shell wide">
     <header class="top">
       <div>
-        <h1>Stream history</h1>
-        <p class="lede">What each destination actually did, per session.</p>
+        <h1>ISKCON Deoghar Multistreaming</h1>
+        <p class="lede">Stream history — what each destination did, per session.</p>
       </div>
       <div class="top-actions">
-        <a class="ghost-link" href="{{ url_for('index') }}">Back to keys</a>
+        <a class="ghost-link" href="{{ url_for('index') }}">Back to control</a>
         <form method="post" action="{{ url_for('logout') }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="ghost">Log out</button>

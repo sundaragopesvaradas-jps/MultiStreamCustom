@@ -298,9 +298,9 @@ def record_login_failure(ip: str) -> tuple[bool, str]:
             when = until.astimezone(IST).strftime("%d %b %Y, %I:%M %p IST")
             notify.send_alert(
                 get_secret_optional,
-                subject="MultiStream: login locked after failed PIN attempts",
+                subject="ISKCON Deoghar Multistreaming: login locked after failed PIN attempts",
                 body=(
-                    f"MultiStream UI received {LOGIN_FAIL_LIMIT} incorrect PIN entries "
+                    f"ISKCON Deoghar Multistreaming received {LOGIN_FAIL_LIMIT} incorrect PIN entries "
                     f"from {ip}.\n\n"
                     f"Login is locked for {LOGIN_LOCK_MINUTES} minutes "
                     f"(until {when}).\n\n"

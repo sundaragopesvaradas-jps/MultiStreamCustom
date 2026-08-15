@@ -196,7 +196,7 @@ def start_livestream(
     get_secret: GetSecret,
     meeting_id: str,
     *,
-    display_name: str = "MultiStream",
+    display_name: str = "ISKCON Deoghar",
 ) -> None:
     status, payload = _api(
         get_secret,
