@@ -85,9 +85,12 @@ def main() -> int:
         log.info("lives already ready — skipping auto-prepare (%s)", status.message)
         return 0
 
-    title = platforms.DEFAULT_LIVE_TITLE
-    description = platforms.DEFAULT_LIVE_DESCRIPTION
-    log.warning("lives not ready (%s) — auto-preparing with default title", status.message)
+    title, description = platforms.default_live_metadata(get_secret)
+    log.warning(
+        "lives not ready (%s) — auto-preparing with default title %r",
+        status.message,
+        title,
+    )
 
     set_secret("stream-title", title)
     set_secret("stream-description", description)

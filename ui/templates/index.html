@@ -164,6 +164,39 @@
       {% endif %}
     </section>
 
+    <section aria-labelledby="defaults-heading">
+      <h2 id="defaults-heading">Default title (auto-prepare)</h2>
+      <p>
+        Used only when Zoom starts Custom Live Streaming <strong>without</strong> Prepare live.
+        Saved in Key Vault. Anyone with the PIN can change this.
+      </p>
+      <form method="post" action="{{ url_for('save_defaults') }}" class="card-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label for="default_title">Default video title</label>
+        <input
+          id="default_title"
+          name="default_title"
+          type="text"
+          required
+          maxlength="100"
+          value="{{ default_live_title }}"
+          autocomplete="off"
+        >
+        <label for="default_description">Default description</label>
+        <textarea
+          id="default_description"
+          name="default_description"
+          rows="3"
+          maxlength="5000"
+        >{{ default_live_description }}</textarea>
+        <button type="submit">Save defaults</button>
+      </form>
+      <p class="hint">
+        This does not change the next prepared stream. For an upcoming stream, edit
+        <strong>Title and description</strong> above and click Prepare live (or Update mid-stream).
+      </p>
+    </section>
+
     <section aria-labelledby="zoom-heading">
       <h2 id="zoom-heading">Paste into Zoom</h2>
       <p>Meeting → More → Live on Custom Live Streaming Service</p>

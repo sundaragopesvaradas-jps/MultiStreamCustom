@@ -95,7 +95,9 @@ named `facebook-graph-version` (for example `v26.0`) to move without a code chan
 
 ## 3) Every stream
 
-1. PIN login. Title/description default to **ISKCON Deoghar Live** in the form.
+1. PIN login. Set **Default title (auto-prepare)** once (Key Vault secrets
+   `default-stream-title` / `default-stream-description`). Fallback if unset:
+   **ISKCON Deoghar Live**.
 2. Prefer **Prepare live on platforms** before Zoom (creates YT + FB lives + fresh keys).
 3. If you skip Prepare live, Zoom Custom Live Streaming still works: MultiStream auto-creates
    lives with that default title when Zoom connects. Use **Update title & description** mid-stream

@@ -514,8 +514,9 @@ def index():
     zoom_server = f"rtmp://{host}/live"
     enabled = read_enabled()
     oauth = platforms.oauth_configured(get_secret)
-    title = get_secret_optional("stream-title") or platforms.DEFAULT_LIVE_TITLE
-    description = get_secret_optional("stream-description") or platforms.DEFAULT_LIVE_DESCRIPTION
+    default_title, default_description = platforms.default_live_metadata(get_secret)
+    title = get_secret_optional("stream-title") or default_title
+    description = get_secret_optional("stream-description") or default_description
     yt_watch = get_secret_optional("youtube-watch-url") or ""
     fb_watch = get_secret_optional("facebook-watch-url") or ""
     fb_page = get_secret_optional("facebook-page-name") or ""
@@ -548,7 +549,8 @@ def index():
         oauth=oauth,
         stream_title=title,
         stream_description=description,
-        default_live_title=platforms.DEFAULT_LIVE_TITLE,
+        default_live_title=default_title,
+        default_live_description=default_description,
         youtube_watch_url=yt_watch,
         facebook_watch_url=fb_watch,
         facebook_page_name=fb_page,
@@ -653,6 +655,24 @@ def save_metadata():
         flash("Title and description saved.", "ok")
     except Exception as exc:  # noqa: BLE001
         flash(f"Could not save metadata: {exc}", "error")
+    return redirect(url_for("index"))
+
+
+@app.post("/defaults")
+@login_required
+def save_defaults():
+    """Defaults used when Zoom goes live without Prepare live."""
+    title = request.form.get("default_title", "").strip()
+    description = request.form.get("default_description", "").strip()
+    if not title:
+        flash("Default title is required.", "error")
+        return redirect(url_for("index"))
+    try:
+        set_secret("default-stream-title", title)
+        set_secret("default-stream-description", description or title)
+        flash("Default title and description saved for auto-prepare.", "ok")
+    except Exception as exc:  # noqa: BLE001
+        flash(f"Could not save defaults: {exc}", "error")
     return redirect(url_for("index"))
 
 

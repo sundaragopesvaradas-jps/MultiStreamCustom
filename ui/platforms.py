@@ -21,9 +21,18 @@ SetSecret = Callable[[str, str], None]
 GetOptional = Callable[[str], str | None]
 
 # Shown in the UI form when nothing has been saved yet, and used by
-# auto-prepare when Zoom goes live without a fresh Prepare live.
+# auto-prepare when Zoom goes live without a fresh Prepare live — unless
+# Key Vault secrets default-stream-title / default-stream-description are set.
 DEFAULT_LIVE_TITLE = "ISKCON Deoghar Live"
 DEFAULT_LIVE_DESCRIPTION = "ISKCON Deoghar Live"
+
+
+def default_live_metadata(get_secret: GetSecret) -> tuple[str, str]:
+    """Title/description used when Zoom starts without Prepare live."""
+    title = get_optional(get_secret, "default-stream-title") or DEFAULT_LIVE_TITLE
+    description = get_optional(get_secret, "default-stream-description") or DEFAULT_LIVE_DESCRIPTION
+    return title.strip() or DEFAULT_LIVE_TITLE, description.strip() or DEFAULT_LIVE_DESCRIPTION
+
 
 # YouTube lifeCycleStatus values that still accept an RTMP push.
 _YT_ACCEPTING = frozenset({"ready", "testing", "live"})
