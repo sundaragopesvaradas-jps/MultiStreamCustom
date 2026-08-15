@@ -104,14 +104,86 @@ named `facebook-graph-version` (for example `v26.0`) to move without a code chan
    to rename without rotating keys.
 4. Use a watch URL from the UI for Zoom’s “Live streaming page URL”.
 
-Anyone with the **manager PIN** can start/stop streaming and update title/destinations
-mid-stream. Only the **owner PIN** can open section 4 (OAuth apps, keys, prepare live).
+## 4) Owner and manager PINs
 
-Until an owner PIN is created, the existing team PIN still has full (owner) access so
-you are not locked out. After you save an owner PIN in section 4, that same team PIN
-becomes manager-only.
+There are **two** PIN slots (not one PIN per person):
 
-## 4) Login lockout email
+| Role | What they can do | Key Vault secret |
+| --- | --- | --- |
+| **Owner** | Full page, including section 4 (apps, keys, OAuth, prepare live) | `ui-owner-pin-hash` |
+| **Manager** | Sections 1–3 only — start/stop streaming, destinations, title mid-stream, history | `ui-pin-hash` |
+
+Share the **manager PIN** with people who run the daily stream. Keep the **owner PIN** only for yourself (or a trusted admin).
+
+Until an owner PIN is created, the existing team PIN still has full (owner) access so you are not locked out. After you save an owner PIN, that same team PIN becomes **manager-only**.
+
+### Create the owner PIN (first time)
+
+1. Open the UI and log in with the **current team PIN**.
+2. Go to section **4 · Do not update these settings unless you are sure**.
+3. Under **Owner & manager PINs**, enter a new **owner PIN** (4–12 digits).
+4. Optionally also set a new **manager PIN** (or leave blank to keep the current team PIN as manager).
+5. Click **Save PINs**.
+6. Log out. From now on:
+   - Owner PIN → full page  
+   - Manager / old team PIN → sections 1–3 only  
+
+### Create or change a PIN later (rotate access)
+
+Only the **owner** can change PINs.
+
+1. Log in with the **owner PIN**.
+2. Section 4 → **Owner & manager PINs**.
+3. Fill only the field you want to change (leave the other blank to keep it):
+   - **New owner PIN** — replaces the owner login  
+   - **New manager PIN** — replaces the manager login shared with operators  
+4. Click **Save PINs**.
+5. Tell managers the new manager PIN if you changed it. The previous value stops working immediately.
+
+### Remove someone’s access (revoke a PIN)
+
+There is no per-person user list. Access is “whoever knows the PIN.” To remove access:
+
+1. Log in as **owner**.
+2. Set a **new manager PIN** (and/or **new owner PIN** if that one was shared).
+3. Save. The old PIN no longer unlocks the UI.
+4. Share the new manager PIN only with people who should still operate the stream.
+
+If you only rotate the manager PIN, owner access is unchanged. If the owner PIN itself was leaked, rotate **both**.
+
+### Emergency: change PINs from Azure (UI locked out)
+
+Vault: **`mskvjixozpwkde4wu`**. From a machine with Key Vault access (or the MultiStream VM after `az login --identity`):
+
+```bash
+# Generate a PBKDF2 hash for a new PIN (example: 482915), then store it.
+NEW_PIN='482915'
+HASH="$(NEW_PIN="$NEW_PIN" python3 - <<'PY'
+import hashlib, os, secrets
+pin = os.environ["NEW_PIN"].strip().encode()
+salt = secrets.token_bytes(16)
+digest = hashlib.pbkdf2_hmac("sha256", pin, salt, 260000)
+print(f"pbkdf2_sha256$260000${salt.hex()}${digest.hex()}")
+PY
+)"
+
+# Manager PIN (operators)
+az keyvault secret set --vault-name mskvjixozpwkde4wu --name ui-pin-hash --value "$HASH"
+
+# Owner PIN (full page) — use a different NEW_PIN / HASH for this one
+az keyvault secret set --vault-name mskvjixozpwkde4wu --name ui-owner-pin-hash --value "$HASH"
+```
+
+Then on the VM (or wait for the next deploy refresh):
+
+```bash
+sudo /opt/multistream/bin/refresh-ui-env.sh
+sudo systemctl restart multistream-ui.service
+```
+
+Do **not** store plaintext PINs in Key Vault for day-to-day use; the UI always writes hashed values (`ui-pin-hash` / `ui-owner-pin-hash`).
+
+## 5) Login lockout email
 
 After 5 wrong PIN attempts from one IP, login locks for 60 minutes and emails
 `sundaragopesvaradas.jps@gmail.com`.

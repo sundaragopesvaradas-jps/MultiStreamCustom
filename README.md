@@ -20,7 +20,7 @@ sequenceDiagram
 - Always-on `Standard_B2s` VM in **Central India**
 - MediaMTX ingest + FFmpeg **stream copy** (no re-encode)
 - Destination keys in **Azure Key Vault**
-- PIN UI on the same VM (`http://<public-ip>/`)
+- PIN UI on the same VM (`http://<public-ip>/`) — **owner** (full page) and **manager** (start/stop) PINs; see `docs/OAUTH_SETUP.md` §4
 
 ## Cost reality
 
