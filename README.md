@@ -73,9 +73,14 @@ Before Zoom: create/start the YouTube and Facebook live sessions so those keys a
 ## Auto deploy
 
 Pushing to `main` runs GitHub Actions on a **self-hosted runner** on the Azure VM
-(`vm/update.sh`). SSH stays locked to your admin IPs; the runner pulls jobs outbound.
+(`vm/update.sh`). SSH stays open for admin; the runner pulls jobs outbound.
 
 Manual deploy still works: `sudo bash vm/update.sh` on the VM.
+
+## Title and description (YouTube + Facebook APIs)
+
+See [docs/OAUTH_SETUP.md](docs/OAUTH_SETUP.md). After connecting accounts once, anyone
+with the PIN can set title/description and click **Prepare live**.
 
 The UI records every session. Open **Stream history** to see, per destination,
 whether video was actually delivered.
