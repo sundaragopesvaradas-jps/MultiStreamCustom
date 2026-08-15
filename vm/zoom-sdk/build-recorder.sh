@@ -166,10 +166,18 @@ cpp = cpp.replace(
     'withoutloginParam.userName = "LinuxChun";',
     'withoutloginParam.userName = display_name.empty() ? "ISKCON Deoghar Archive" : display_name.c_str();',
 )
+# Start muted/video-off so the bot is less disruptive
+cpp = cpp.replace("withoutloginParam.isVideoOff = false;", "withoutloginParam.isVideoOff = true;")
+cpp = cpp.replace("withoutloginParam.isAudioOff = false;", "withoutloginParam.isAudioOff = true;")
 # Fix Zoom sample bug: `!recording_token.size() == 0` is always false.
 cpp = cpp.replace(
     "if (!recording_token.size() == 0)",
     "if (recording_token.size() != 0)",
+)
+# Meeting SDK 7.x added FrameDataFormat to setExternalVideoSource.
+cpp = cpp.replace(
+    "SDKError err = p_videoSourceHelper->setExternalVideoSource(virtual_camera_video_source);",
+    "SDKError err = p_videoSourceHelper->setExternalVideoSource(virtual_camera_video_source, FrameDataFormat_I420_FULL);",
 )
 
 (demo / "meeting_sdk_demo.cpp").write_text(cpp, encoding="utf-8")
