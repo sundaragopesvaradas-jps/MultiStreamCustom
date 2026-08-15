@@ -183,6 +183,36 @@ def meeting_started(get_secret: GetSecret, meeting_id: str) -> bool:
     return str(detail.get("status") or "").lower() == "started"
 
 
+def local_recording_token(get_secret: GetSecret, meeting_id: str) -> str:
+    """Token that grants a joining SDK bot local-recording rights.
+
+    Without it the host has to click "Allow to record" for the bot in every
+    meeting, so raw audio/video capture would silently never start.
+    Needs scope meeting:read:local_recording_token:admin and a Zoom plan where
+    local recording is enabled.
+    """
+    mid = normalize_meeting_id(meeting_id)
+    status, payload = _api(
+        get_secret,
+        "GET",
+        f"/meetings/{urllib.parse.quote(mid)}/jointoken/local_recording",
+    )
+    if status >= 400 or not isinstance(payload, dict) or not payload.get("token"):
+        message = payload.get("message") if isinstance(payload, dict) else str(payload)
+        raise ZoomError(
+            f"Zoom would not issue a local recording token ({status}): {message}. "
+            "Add the meeting:read:local_recording_token:admin scope to the "
+            "Server-to-Server app and enable local recording on the account."
+        )
+    return str(payload["token"])
+
+
+def meeting_passcode(get_secret: GetSecret, meeting_id: str) -> str:
+    """Passcode the bot needs to join, empty when the meeting has none."""
+    detail = get_meeting(get_secret, meeting_id)
+    return str(detail.get("password") or "")
+
+
 def configure_livestream(
     get_secret: GetSecret,
     meeting_id: str,

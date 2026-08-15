@@ -98,6 +98,8 @@ class ZoomSdkRecorder(MeetingRecorder):
         meeting_id: str,
         display_name: str,
         output_dir: Path,
+        passcode: str = "",
+        recording_token: str = "",
     ) -> RecorderSession:
         if self.is_running():
             state = self._read_state()
@@ -134,6 +136,8 @@ class ZoomSdkRecorder(MeetingRecorder):
         job = {
             "meeting_number": digits,
             "token": token,
+            "meeting_password": passcode,
+            "recording_token": recording_token,
             "display_name": display_name[:64],
             "output_path": str(output_path),
             "sdk_key": sdk_key,

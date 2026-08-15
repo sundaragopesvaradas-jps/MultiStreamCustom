@@ -146,10 +146,20 @@ def tick(config: RecordingConfig | None = None) -> dict:
         return result
 
     try:
+        join = meeting.join_details(get_secret, config.meeting_id)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Could not read join details: %s", exc)
+        join = {"passcode": "", "recording_token": "", "warning": str(exc)}
+    if join.get("warning"):
+        result["join_warning"] = join["warning"]
+
+    try:
         session = recorder.start(
             meeting_id=config.meeting_id,
             display_name=config.bot_display_name,
             output_dir=OUTPUT_DIR,
+            passcode=join.get("passcode", ""),
+            recording_token=join.get("recording_token", ""),
         )
     except RecorderNotInstalled as exc:
         result["action"] = "sdk_not_installed"
@@ -167,6 +177,17 @@ def tick(config: RecordingConfig | None = None) -> dict:
             body=f"Window {window.label}\nMeeting {config.meeting_id}\n\n{exc}",
         )
         return result
+
+    if join.get("warning"):
+        send_alert(
+            subject="ISKCON recording: bot joined without recording rights",
+            body=(
+                f"Window {window.label}\nMeeting {config.meeting_id}\n\n"
+                f"{join['warning']}\n\n"
+                "The bot is in the meeting, but the host must grant it "
+                "\"Allow to record local files\" or nothing will be captured."
+            ),
+        )
 
     result["action"] = "started"
     result["session"] = {
