@@ -95,6 +95,9 @@ def tick(config: RecordingConfig | None = None) -> dict:
         "at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
 
+    if recorder.is_running() and _capture_mode(recorder) == "instant":
+        return _tick_instant(recorder, get_secret, get_optional, send_alert, config, result)
+
     if not config.enabled:
         if recorder.is_running():
             result["action"] = "stop_disabled"
@@ -160,6 +163,7 @@ def tick(config: RecordingConfig | None = None) -> dict:
             output_dir=OUTPUT_DIR,
             passcode=join.get("passcode", ""),
             recording_token=join.get("recording_token", ""),
+            mode="scheduled",
         )
     except RecorderNotInstalled as exc:
         result["action"] = "sdk_not_installed"
@@ -198,6 +202,139 @@ def tick(config: RecordingConfig | None = None) -> dict:
     return result
 
 
+def _capture_mode(recorder: ZoomSdkRecorder) -> str:
+    mode = str(recorder.status().get("mode") or "scheduled")
+    return mode if mode in {"scheduled", "instant"} else "scheduled"
+
+
+def _tick_instant(
+    recorder: ZoomSdkRecorder,
+    get_secret: GetSecret,
+    get_optional: GetOptional,
+    send_alert: SendAlert,
+    config: RecordingConfig,
+    result: dict,
+) -> dict:
+    """Instant captures ignore the schedule; stop only when the meeting ends."""
+    result["mode"] = "instant"
+    meeting_id = str(recorder.status().get("meeting_id") or config.meeting_id or "")
+    if not meeting_id:
+        result["action"] = "already_recording"
+        result["recorder"] = recorder.status()
+        return result
+    try:
+        live = meeting.is_in_progress(get_secret, meeting_id)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Instant recording: meeting status check failed: %s", exc)
+        result["action"] = "already_recording"
+        result["recorder"] = recorder.status()
+        result["status_warning"] = str(exc)
+        return result
+    if not live:
+        result["action"] = "stop_meeting_ended"
+        _finalize_recording(
+            recorder, get_optional, send_alert, reason="meeting ended (instant recording)"
+        )
+        return result
+    result["action"] = "already_recording"
+    result["recorder"] = recorder.status()
+    return result
+
+
+def start_instant(config: RecordingConfig | None = None) -> dict:
+    """Join and record now, ignoring the weekly schedule."""
+    get_secret, get_optional, send_alert = _secret_helpers()
+    config = config or store.load()
+    recorder = ZoomSdkRecorder(get_secret, get_optional)
+    result: dict = {
+        "action": "idle",
+        "at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "mode": "instant",
+    }
+
+    if recorder.is_running():
+        result["action"] = "already_recording"
+        result["recorder"] = recorder.status()
+        return result
+
+    if not config.meeting_id:
+        result["action"] = "no_meeting_id"
+        result["error"] = "Set a Zoom meeting ID in the recording schedule first."
+        return result
+
+    try:
+        live = meeting.is_in_progress(get_secret, config.meeting_id)
+    except Exception as exc:  # noqa: BLE001
+        result["action"] = "status_error"
+        result["error"] = str(exc)
+        return result
+    if not live:
+        result["action"] = "meeting_not_running"
+        result["error"] = (
+            f"Meeting {config.meeting_id} is not in progress. Start the Zoom meeting first."
+        )
+        return result
+
+    try:
+        join = meeting.join_details(get_secret, config.meeting_id)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Could not read join details: %s", exc)
+        join = {"passcode": "", "recording_token": "", "warning": str(exc)}
+
+    try:
+        session = recorder.start(
+            meeting_id=config.meeting_id,
+            display_name=config.bot_display_name,
+            output_dir=OUTPUT_DIR,
+            passcode=join.get("passcode", ""),
+            recording_token=join.get("recording_token", ""),
+            mode="instant",
+        )
+    except RecorderNotInstalled as exc:
+        result["action"] = "sdk_not_installed"
+        result["error"] = str(exc)
+        return result
+    except Exception as exc:  # noqa: BLE001
+        result["action"] = "start_failed"
+        result["error"] = str(exc)
+        return result
+
+    if join.get("warning"):
+        result["join_warning"] = join["warning"]
+        send_alert(
+            subject="ISKCON recording: bot joined without recording rights",
+            body=(
+                f"Instant recording\nMeeting {config.meeting_id}\n\n"
+                f"{join['warning']}\n\n"
+                "The bot is in the meeting, but the host must grant it "
+                "\"Allow to record local files\" or nothing will be captured."
+            ),
+        )
+
+    result["action"] = "started"
+    result["session"] = {
+        "pid": session.pid,
+        "output": str(session.output_path),
+        "display_name": session.display_name,
+    }
+    return result
+
+
+def stop_now(*, reason: str = "stopped from owner console") -> dict:
+    """Stop whichever capture is running and upload the file."""
+    get_secret, get_optional, send_alert = _secret_helpers()
+    recorder = ZoomSdkRecorder(get_secret, get_optional)
+    result: dict = {
+        "action": "idle",
+        "at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
+    if not recorder.is_running():
+        result["action"] = "not_recording"
+        return result
+    result["action"] = "stopped"
+    result["mode"] = _capture_mode(recorder)
+    _finalize_recording(recorder, get_optional, send_alert, reason=reason)
+    return result
 def _alert_meeting_missing(send_alert: SendAlert, config: RecordingConfig, window: str) -> None:
     state = _load_alert_state()
     # One email per window label per day-ish — latch until meeting appears or window changes.

@@ -748,10 +748,13 @@ def index():
 
     recording_config = None
     recording_schedule_text: dict[str, str] = {}
+    recording_running = False
+    recording_mode = ""
     if owner:
         sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
         from recording import store as recording_store
         from recording.models import WEEKDAYS, WEEKDAY_LABELS
+        from recording.recorder import ZoomSdkRecorder
 
         recording_config = recording_store.load()
         for day in WEEKDAYS:
@@ -759,6 +762,13 @@ def index():
             recording_schedule_text[day] = ", ".join(
                 f"{slot.start}-{slot.end}" for slot in slots
             )
+        try:
+            rec_status = ZoomSdkRecorder(get_secret, get_secret_optional).status()
+            recording_running = bool(rec_status.get("running"))
+            recording_mode = str(rec_status.get("mode") or "")
+        except Exception:  # noqa: BLE001
+            recording_running = False
+            recording_mode = ""
     else:
         WEEKDAY_LABELS = {}
 
@@ -770,6 +780,8 @@ def index():
         recording=recording_config,
         recording_schedule_text=recording_schedule_text,
         recording_weekdays=WEEKDAY_LABELS if owner else {},
+        recording_running=recording_running,
+        recording_mode=recording_mode,
         zoom_api_ready=bool(zoom_account_id and zoom_client_id and zoom_client_secret),
         zoom_meeting_id=zoom_meeting_id,
         zoom_account_id_set=bool(zoom_account_id),
@@ -1090,6 +1102,56 @@ def update_pins():
             flash("Manager PIN updated.", "ok")
     except Exception as exc:  # noqa: BLE001
         flash(f"Could not update PINs: {exc}", "error")
+    return redirect(url_for("index"))
+
+
+@app.post("/recording/instant/start")
+@owner_required
+def recording_instant_start():
+    """Start the Meeting SDK bot now, without waiting for a schedule slot."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from recording import pipeline as recording_pipeline
+
+    try:
+        result = recording_pipeline.start_instant()
+    except Exception as exc:  # noqa: BLE001
+        flash(f"Could not start recording: {exc}", "error")
+        return redirect(url_for("index"))
+
+    action = result.get("action")
+    if action == "started":
+        flash("Instant recording started — the bot is joining the meeting.", "ok")
+    elif action == "already_recording":
+        flash("Recording is already in progress.", "ok")
+    elif action == "meeting_not_running":
+        flash(result.get("error") or "The Zoom meeting is not running yet.", "error")
+    elif action == "no_meeting_id":
+        flash(result.get("error") or "Set a Zoom meeting ID in the schedule below first.", "error")
+    else:
+        flash(result.get("error") or f"Could not start recording ({action}).", "error")
+    return redirect(url_for("index"))
+
+
+@app.post("/recording/instant/stop")
+@owner_required
+def recording_instant_stop():
+    """Stop the current recording and upload the file."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from recording import pipeline as recording_pipeline
+
+    try:
+        result = recording_pipeline.stop_now(reason="instant recording stopped from owner console")
+    except Exception as exc:  # noqa: BLE001
+        flash(f"Could not stop recording: {exc}", "error")
+        return redirect(url_for("index"))
+
+    action = result.get("action")
+    if action == "stopped":
+        flash("Recording stopped — uploading to Azure Storage.", "ok")
+    elif action == "not_recording":
+        flash("Nothing is recording right now.", "ok")
+    else:
+        flash(f"Stop finished with status: {action}.", "ok")
     return redirect(url_for("index"))
 
 

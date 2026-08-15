@@ -329,6 +329,37 @@
         <button type="submit">Save PINs</button>
       </form>
 
+      <h3 id="instant-recording-heading">Instant Zoom recording</h3>
+      <p class="hint">
+        Start or stop the Meeting SDK bot right now, without waiting for a schedule slot.
+        Uses the Zoom meeting ID saved in the schedule section below. The meeting must
+        already be running. Instant Off also stops a scheduled recording that is in progress.
+      </p>
+      <p class="status" aria-live="polite">
+        {% if recording_running %}
+          Recording now
+          {% if recording_mode == "instant" %}(instant){% elif recording_mode == "scheduled" %}(scheduled){% endif %}
+        {% else %}
+          Not recording
+        {% endif %}
+        · Meeting ID:
+        {% if recording and recording.meeting_id %}{{ recording.meeting_id }}{% else %}not set — save one below{% endif %}
+      </p>
+      <div class="button-row">
+        <form method="post" action="{{ url_for('recording_instant_start') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" {% if recording_running or not recording or not recording.meeting_id %}disabled aria-disabled="true"{% endif %}>
+            Instant recording On
+          </button>
+        </form>
+        <form method="post" action="{{ url_for('recording_instant_stop') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="ghost" {% if not recording_running %}disabled aria-disabled="true"{% endif %}>
+            Instant recording Off
+          </button>
+        </form>
+      </div>
+
       <h3 id="recording-heading">Scheduled Zoom recording (Meeting SDK)</h3>
       <p class="hint">
         The bot joins as a participant during the slots below (IST), records with Meeting SDK

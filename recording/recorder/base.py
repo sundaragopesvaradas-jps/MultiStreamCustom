@@ -41,6 +41,7 @@ class MeetingRecorder(ABC):
         output_dir: Path,
         passcode: str = "",
         recording_token: str = "",
+        mode: str = "scheduled",
     ) -> RecorderSession:
         ...
 

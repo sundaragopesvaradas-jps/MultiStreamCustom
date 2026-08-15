@@ -120,6 +120,7 @@ class ZoomSdkRecorder(MeetingRecorder):
         output_dir: Path,
         passcode: str = "",
         recording_token: str = "",
+        mode: str = "scheduled",
     ) -> RecorderSession:
         if self.is_running():
             state = self._read_state()
@@ -195,6 +196,7 @@ class ZoomSdkRecorder(MeetingRecorder):
             pid=proc.pid,
             started_at=started,
         )
+        capture_mode = mode if mode in {"scheduled", "instant"} else "scheduled"
         self._write_state(
             {
                 "pid": proc.pid,
@@ -203,6 +205,7 @@ class ZoomSdkRecorder(MeetingRecorder):
                 "output_path": str(output_path),
                 "job_path": str(job_path),
                 "started_at": started,
+                "mode": capture_mode,
             }
         )
         return session
