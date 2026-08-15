@@ -203,40 +203,45 @@ def _finalize_recording(
     *,
     reason: str,
 ) -> None:
-    stopped = recorder.stop()
-    if not stopped.ok or not stopped.output_path:
-        send_alert(
-            subject="ISKCON recording: stop with no file",
-            body=f"Reason: {reason}\n{stopped.message}",
-        )
-        return
+    from . import status as recording_status
 
-    local = stopped.output_path
-    blob_name = local.name
+    recording_status.set_processing(True, detail=reason)
     try:
-        url = blobstore.upload_file(get_optional, local, blob_name=blob_name)
-    except Exception as exc:  # noqa: BLE001
+        stopped = recorder.stop()
+        if not stopped.ok or not stopped.output_path:
+            send_alert(
+                subject="ISKCON recording: stop with no file",
+                body=f"Reason: {reason}\n{stopped.message}",
+            )
+            return
+
+        local = stopped.output_path
+        blob_name = local.name
+        try:
+            url = blobstore.upload_file(get_optional, local, blob_name=blob_name)
+        except Exception as exc:  # noqa: BLE001
+            send_alert(
+                subject="ISKCON recording: upload failed",
+                body=f"Reason: {reason}\nLocal file: {local}\n\n{exc}",
+            )
+            return
+
         send_alert(
-            subject="ISKCON recording: upload failed",
-            body=f"Reason: {reason}\nLocal file: {local}\n\n{exc}",
+            subject="ISKCON recording: saved to Azure Storage",
+            body=(
+                f"Reason: {reason}\n"
+                f"Local file: {local}\n"
+                f"Blob: {blob_name}\n"
+                f"URL: {url}\n"
+                f"Retention: {RETENTION_DAYS} days\n"
+            ),
         )
-        return
-
-    send_alert(
-        subject="ISKCON recording: saved to Azure Storage",
-        body=(
-            f"Reason: {reason}\n"
-            f"Local file: {local}\n"
-            f"Blob: {blob_name}\n"
-            f"URL: {url}\n"
-            f"Retention: {RETENTION_DAYS} days\n"
-        ),
-    )
-    try:
-        local.unlink(missing_ok=True)
-    except OSError:
-        pass
-
+        try:
+            local.unlink(missing_ok=True)
+        except OSError:
+            pass
+    finally:
+        recording_status.set_processing(False)
 
 def purge_retention() -> list[str]:
     _, get_optional, send_alert = _secret_helpers()

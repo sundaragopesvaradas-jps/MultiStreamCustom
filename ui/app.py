@@ -577,7 +577,20 @@ def live_status() -> dict:
         "facebook_enabled": enabled["facebook"],
         "youtube_running": destination_running("youtube"),
         "facebook_running": destination_running("facebook"),
+        "enhance_enabled": enabled["enhance"],
+        "recording_phase": "",
+        "recording_label": "",
     }
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+        from recording.status import public_status as recording_public_status
+
+        rec = recording_public_status()
+        status["recording_phase"] = rec.get("phase") or ""
+        status["recording_label"] = rec.get("label") or ""
+    except Exception:  # noqa: BLE001
+        pass
+
     try:
         with urllib.request.urlopen(MEDIAMTX_API, timeout=3) as response:
             payload = json.loads(response.read().decode("utf-8"))

@@ -39,6 +39,16 @@
       {% endif %}
     </p>
 
+    <div
+      id="recording-status"
+      class="banner {% if live.recording_phase == 'recording' %}banner-ok{% elif live.recording_phase == 'processing' %}banner-warn{% endif %}"
+      role="status"
+      aria-live="polite"
+      {% if live.recording_phase not in ('recording', 'processing') %}hidden{% endif %}
+    >
+      <p id="recording-status-text">{{ live.recording_label }}</p>
+    </div>
+
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
         <ul class="flash" role="status" aria-live="polite">
