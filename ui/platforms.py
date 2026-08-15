@@ -408,14 +408,34 @@ def facebook_prepare_live(
     if not stream_url or "/" not in stream_url:
         raise PlatformError(f"Facebook live created but no stream URL returned: {live}")
     stream_key = stream_url.rstrip("/").rsplit("/", 1)[-1]
-    watch_url = f"https://www.facebook.com/{page_id}/videos/{live_id}/" if live_id else ""
-    # Permalink if provided
-    if live.get("permalink_url"):
-        watch_url = live["permalink_url"]
-        if watch_url.startswith("/"):
-            watch_url = f"https://www.facebook.com{watch_url}"
+
+    # The create response has no permalink, so ask for it separately. The link
+    # only resolves publicly once the broadcast actually receives video data.
+    permalink = live.get("permalink_url")
+    if not permalink and live_id:
+        try:
+            detail = _http_json(
+                "GET",
+                f"{_fb_graph(get_secret)}/{live_id}"
+                f"?fields=permalink_url&access_token={urllib.parse.quote(page_token)}",
+            )
+            permalink = detail.get("permalink_url")
+        except PlatformError:
+            permalink = None
+
+    if permalink:
+        watch_url = (
+            f"https://www.facebook.com{permalink}"
+            if permalink.startswith("/")
+            else permalink
+        )
+    else:
+        watch_url = f"https://www.facebook.com/{page_id}/videos/{live_id}/" if live_id else ""
 
     set_secret("facebook-stream-key", stream_key)
+    # Keep the full URL: the API binds the key to the ingest host it returns,
+    # and the key's query string must be passed through untouched.
+    set_secret("facebook-stream-url", stream_url)
     set_secret("facebook-watch-url", watch_url)
     set_secret("facebook-live-id", live_id)
     return LivePrepResult(
