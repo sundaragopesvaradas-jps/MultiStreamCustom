@@ -522,14 +522,20 @@
           Meeting SDK key/secret (raw data enabled) and the Azure Storage account that holds
           recordings. Container defaults to <code>recordings</code>.
         </p>
+        <p class="status" aria-live="polite">
+          SDK Key: {% if zoom_sdk_key_set %}set ({{ zoom_sdk_key_masked }}){% else %}not set{% endif %}
+          · SDK Secret: {% if zoom_sdk_secret_set %}set ({{ zoom_sdk_secret_masked }}){% else %}not set{% endif %}
+          · Storage: {% if recording_storage_account_set %}set ({{ recording_storage_account_masked }}){% else %}not set{% endif %}
+          · Container: {% if recording_storage_container_set %}set ({{ recording_storage_container_masked }}){% else %}not set{% endif %}
+        </p>
         <label for="zoom_sdk_key">Zoom Meeting SDK Key</label>
         <input id="zoom_sdk_key" name="zoom_sdk_key" type="text" autocomplete="off" placeholder="Leave blank to keep current">
         <label for="zoom_sdk_secret">Zoom Meeting SDK Secret</label>
         <input id="zoom_sdk_secret" name="zoom_sdk_secret" type="password" autocomplete="off" placeholder="Leave blank to keep current">
         <label for="recording_storage_account">Azure Storage account name</label>
-        <input id="recording_storage_account" name="recording_storage_account" type="text" autocomplete="off" placeholder="e.g. msisckcondeoghar">
+        <input id="recording_storage_account" name="recording_storage_account" type="text" autocomplete="off" placeholder="Leave blank to keep current">
         <label for="recording_storage_container">Blob container</label>
-        <input id="recording_storage_container" name="recording_storage_container" type="text" autocomplete="off" placeholder="recordings">
+        <input id="recording_storage_container" name="recording_storage_container" type="text" autocomplete="off" placeholder="Leave blank to keep current">
 
         <button type="submit">Save app credentials</button>
       </form>

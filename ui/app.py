@@ -142,6 +142,10 @@ INDEX_SECRET_NAMES = (
     "zoom-client-id",
     "zoom-client-secret",
     "zoom-meeting-id",
+    "zoom-sdk-key",
+    "zoom-sdk-secret",
+    "recording-storage-account",
+    "recording-storage-container",
 )
 
 # Manager console skips section 4 — fewer Key Vault reads on their page load.
@@ -699,6 +703,10 @@ def index():
     zoom_client_id = _snap_value(snap, "zoom-client-id") or ""
     zoom_client_secret = _snap_value(snap, "zoom-client-secret") or ""
     zoom_meeting_id = _snap_value(snap, "zoom-meeting-id") or ""
+    zoom_sdk_key = _snap_value(snap, "zoom-sdk-key") or ""
+    zoom_sdk_secret = _snap_value(snap, "zoom-sdk-secret") or ""
+    recording_storage_account = _snap_value(snap, "recording-storage-account") or ""
+    recording_storage_container = _snap_value(snap, "recording-storage-container") or ""
 
     oauth = {
         "google_app": bool(google_client_id and google_client_secret),
@@ -766,6 +774,14 @@ def index():
         zoom_client_id_masked=mask(zoom_client_id),
         zoom_client_secret_set=bool(zoom_client_secret),
         zoom_client_secret_masked=mask(zoom_client_secret),
+        zoom_sdk_key_set=bool(zoom_sdk_key),
+        zoom_sdk_key_masked=mask(zoom_sdk_key),
+        zoom_sdk_secret_set=bool(zoom_sdk_secret),
+        zoom_sdk_secret_masked=mask(zoom_sdk_secret),
+        recording_storage_account_set=bool(recording_storage_account),
+        recording_storage_account_masked=mask(recording_storage_account),
+        recording_storage_container_set=bool(recording_storage_container),
+        recording_storage_container_masked=mask(recording_storage_container),
         zoom_server=zoom_server,
         zoom_key=ingest,
         youtube_masked=mask(yt),
