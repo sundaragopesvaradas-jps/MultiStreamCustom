@@ -184,42 +184,40 @@ cpp = cpp.replace(
 
 renderer = (demo / "ZoomSDKRenderer.cpp").read_text(encoding="utf-8", errors="replace")
 # Save any resolution (not only height==720) and record size for ffmpeg.
-old = """ if (data->GetStreamHeight() == 720) {
- SaveToRawYUVFile(data);
- }"""
-new = """ // Persist first-seen dimensions for the muxer; keep only matching frames.
+replacement = r'''
  static int locked_w = 0, locked_h = 0;
  int w = data->GetStreamWidth();
  int h = data->GetStreamHeight();
  if (locked_w == 0) {
    locked_w = w;
    locked_h = h;
-   std::ofstream meta("video.size", std::ios::out | std::ios::trunc);
-   if (meta.is_open()) {
-     meta << "width=" << locked_w << "\\nheight=" << locked_h << "\\n";
-     meta.close();
+   FILE* meta = fopen("video.size", "w");
+   if (meta) {
+     fprintf(meta, "width=%d\nheight=%d\n", locked_w, locked_h);
+     fclose(meta);
    }
  }
  if (w == locked_w && h == locked_h) {
    SaveToRawYUVFile(data);
- }"""
-# Tolerate whitespace differences by a looser replace.
+ }
+'''
 if "locked_w" not in renderer:
     import re
     renderer2, n = re.subn(
         r"if\s*\(\s*data->GetStreamHeight\(\)\s*==\s*720\s*\)\s*\{\s*SaveToRawYUVFile\(data\);\s*\}",
-        new.strip(),
+        replacement.strip(),
         renderer,
         count=1,
     )
     if n == 0:
-        # Fallback: always save
         renderer2 = renderer.replace(
-            "if (data->GetStreamHeight() == 720) {\n SaveToRawYUVFile(data);\n }",
             "SaveToRawYUVFile(data);",
+            replacement.strip(),
             1,
         )
     renderer = renderer2
+if "#include <cstdio>" not in renderer and "fprintf" in renderer:
+    renderer = renderer.replace("#include <iostream>", "#include <iostream>\n#include <cstdio>", 1)
 (demo / "ZoomSDKRenderer.cpp").write_text(renderer, encoding="utf-8")
 print("patches applied")
 PY
