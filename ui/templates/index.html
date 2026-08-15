@@ -67,9 +67,88 @@
       {% endif %}
     {% endwith %}
 
+    <section aria-labelledby="meta-heading">
+      <h2 id="meta-heading">Title and description</h2>
+      <p>
+        These are applied to <strong>both</strong> YouTube and Facebook when you click
+        <strong>Prepare live</strong>. Anyone with the PIN can update them.
+      </p>
+
+      <div class="status" role="status">
+        YouTube API:
+        {% if oauth.youtube_connected %}connected{% elif oauth.google_app %}app ready — connect account{% else %}configure Google app below{% endif %}
+        · Facebook API:
+        {% if oauth.facebook_connected %}connected{% if facebook_page_name %} ({{ facebook_page_name }}){% endif %}{% elif oauth.facebook_app %}app ready — connect Page{% else %}configure Meta app below{% endif %}
+      </div>
+
+      <div class="oauth-actions">
+        <form method="post" action="{{ url_for('oauth_youtube_start') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="ghost" {% if not oauth.google_app %}disabled aria-disabled="true"{% endif %}>
+            {% if oauth.youtube_connected %}Reconnect YouTube{% else %}Connect YouTube{% endif %}
+          </button>
+        </form>
+        <form method="post" action="{{ url_for('oauth_facebook_start') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="ghost" {% if not oauth.facebook_app %}disabled aria-disabled="true"{% endif %}>
+            {% if oauth.facebook_connected %}Reconnect Facebook{% else %}Connect Facebook{% endif %}
+          </button>
+        </form>
+      </div>
+
+      <form method="post" action="{{ url_for('prepare_live') }}" class="card-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label for="title">Video title</label>
+        <input
+          id="title"
+          name="title"
+          type="text"
+          required
+          maxlength="100"
+          value="{{ stream_title }}"
+          autocomplete="off"
+        >
+
+        <label for="description">Description</label>
+        <textarea
+          id="description"
+          name="description"
+          rows="4"
+          maxlength="5000"
+          placeholder="Shown on YouTube and Facebook"
+        >{{ stream_description }}</textarea>
+
+        <div class="button-row">
+          <button type="submit">Prepare live on platforms</button>
+          <button type="submit" formaction="{{ url_for('save_metadata') }}" class="ghost">Save only</button>
+        </div>
+      </form>
+      <p class="hint">
+        Prepare live creates/updates the YT + FB live objects with this title/description,
+        refreshes stream keys automatically, then you start Zoom Custom Live Streaming as usual.
+      </p>
+      {% if youtube_watch_url or facebook_watch_url %}
+      <dl class="kv">
+        {% if youtube_watch_url %}
+        <div>
+          <dt>Last YouTube watch URL</dt>
+          <dd><a class="ghost-link" href="{{ youtube_watch_url }}" rel="noopener noreferrer" target="_blank">{{ youtube_watch_url }}</a></dd>
+        </div>
+        {% endif %}
+        {% if facebook_watch_url %}
+        <div>
+          <dt>Last Facebook watch URL</dt>
+          <dd><a class="ghost-link" href="{{ facebook_watch_url }}" rel="noopener noreferrer" target="_blank">{{ facebook_watch_url }}</a></dd>
+        </div>
+        {% endif %}
+      </dl>
+      {% endif %}
+    </section>
+
     <section aria-labelledby="zoom-heading">
       <h2 id="zoom-heading">Paste into Zoom</h2>
       <p>Meeting → More → Live on Custom Live Streaming Service</p>
+      <p class="hint">For Zoom’s “Live streaming page URL”, paste the YouTube or Facebook watch link from above after Prepare live.</p>
       <dl class="kv">
         <div>
           <dt>Stream URL (Server URL)</dt>
@@ -166,13 +245,35 @@
     </section>
     {% endif %}
 
+    <section aria-labelledby="oauth-setup-heading">
+      <h2 id="oauth-setup-heading">One-time API app setup</h2>
+      <p class="hint">
+        Redirect URI for both Google and Meta apps (exact match):
+        <code>{{ oauth_redirect_base }}/oauth/youtube/callback</code>
+        and
+        <code>{{ oauth_redirect_base }}/oauth/facebook/callback</code>
+      </p>
+      <form method="post" action="{{ url_for('save_oauth_credentials') }}" class="card-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label for="google_client_id">Google OAuth Client ID</label>
+        <input id="google_client_id" name="google_client_id" type="text" autocomplete="off" placeholder="Leave blank to keep current">
+        <label for="google_client_secret">Google OAuth Client Secret</label>
+        <input id="google_client_secret" name="google_client_secret" type="password" autocomplete="off" placeholder="Leave blank to keep current">
+        <label for="facebook_app_id">Facebook App ID</label>
+        <input id="facebook_app_id" name="facebook_app_id" type="text" autocomplete="off" placeholder="Leave blank to keep current">
+        <label for="facebook_app_secret">Facebook App Secret</label>
+        <input id="facebook_app_secret" name="facebook_app_secret" type="password" autocomplete="off" placeholder="Leave blank to keep current">
+        <button type="submit">Save app credentials</button>
+      </form>
+    </section>
+
     <section aria-labelledby="tips-heading">
       <h2 id="tips-heading">Before you go live</h2>
       <ol>
-        <li>Create/start the YouTube Live stream (or Scheduled) so the key is active.</li>
-        <li>Create the Facebook Live event, then <strong>click “Go Live” in Facebook Live Producer</strong> — Facebook only shows a preview until you do.</li>
-        <li>In Zoom, start Custom Live Streaming with the URL + key above.</li>
-        <li>Confirm both destinations show the feed before unmuting for the audience.</li>
+        <li>Connect YouTube and Facebook once (above).</li>
+        <li>Enter title + description → <strong>Prepare live on platforms</strong>.</li>
+        <li>In Zoom, start Custom Live Streaming with the Azure URL + key. Use a watch URL from Prepare live for Zoom’s page URL field.</li>
+        <li>Confirm both destinations on the history / live status before unmuting for the audience.</li>
       </ol>
     </section>
   </main>

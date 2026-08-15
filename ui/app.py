@@ -30,6 +30,8 @@ from flask_wtf import CSRFProtect
 from flask_wtf.csrf import generate_csrf
 from werkzeug.middleware.proxy_fix import ProxyFix
 
+import platforms
+
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY") or secrets.token_hex(32)
 app.config.update(
@@ -131,6 +133,14 @@ def set_secret(name: str, value: str) -> None:
         ],
         check=True,
     )
+
+
+def get_secret_optional(name: str) -> str | None:
+    return platforms.get_optional(get_secret, name)
+
+
+def public_base() -> str:
+    return platforms.public_base_url(public_host())
 
 
 def sync_secrets() -> None:
@@ -421,6 +431,13 @@ def index():
     host = public_host()
     zoom_server = f"rtmp://{host}/live"
     enabled = read_enabled()
+    oauth = platforms.oauth_configured(get_secret)
+    title = get_secret_optional("stream-title") or ""
+    description = get_secret_optional("stream-description") or ""
+    yt_watch = get_secret_optional("youtube-watch-url") or ""
+    fb_watch = get_secret_optional("facebook-watch-url") or ""
+    fb_page = get_secret_optional("facebook-page-name") or ""
+
     return render_template(
         "index.html",
         zoom_server=zoom_server,
@@ -433,6 +450,13 @@ def index():
         facebook_enabled=enabled["facebook"],
         live=live_status(),
         recent=read_history(limit=3),
+        oauth=oauth,
+        stream_title=title,
+        stream_description=description,
+        youtube_watch_url=yt_watch,
+        facebook_watch_url=fb_watch,
+        facebook_page_name=fb_page,
+        oauth_redirect_base=public_base(),
     )
 
 
@@ -504,6 +528,149 @@ def update_keys():
         flash("Saved. New streams will use the updated keys.", "ok")
     except Exception as exc:  # noqa: BLE001
         flash(f"Update failed: {exc}", "error")
+    return redirect(url_for("index"))
+
+
+@app.post("/metadata")
+@login_required
+def save_metadata():
+    title = request.form.get("title", "").strip()
+    description = request.form.get("description", "").strip()
+    if not title:
+        flash("Title is required.", "error")
+        return redirect(url_for("index"))
+    try:
+        set_secret("stream-title", title)
+        set_secret("stream-description", description)
+        flash("Title and description saved.", "ok")
+    except Exception as exc:  # noqa: BLE001
+        flash(f"Could not save metadata: {exc}", "error")
+    return redirect(url_for("index"))
+
+
+@app.post("/prepare-live")
+@login_required
+@limiter.limit("10 per hour")
+def prepare_live():
+    title = request.form.get("title", "").strip()
+    description = request.form.get("description", "").strip()
+    if not title:
+        flash("Enter a title before preparing the live.", "error")
+        return redirect(url_for("index"))
+
+    enabled = read_enabled()
+    messages: list[str] = []
+    try:
+        set_secret("stream-title", title)
+        set_secret("stream-description", description)
+
+        if enabled["youtube"]:
+            result = platforms.youtube_prepare_live(get_secret, set_secret, title, description)
+            messages.append(f"YouTube ready — {result.watch_url}")
+        if enabled["facebook"]:
+            result = platforms.facebook_prepare_live(get_secret, set_secret, title, description)
+            messages.append(f"Facebook ready — {result.watch_url}")
+
+        if not enabled["youtube"] and not enabled["facebook"]:
+            flash("Turn on at least one destination first.", "error")
+            return redirect(url_for("index"))
+
+        sync_secrets()
+        apply_destinations()
+        flash(" ".join(messages) + " Now start Custom Live Streaming in Zoom.", "ok")
+    except platforms.PlatformError as exc:
+        flash(str(exc), "error")
+    except Exception as exc:  # noqa: BLE001
+        flash(f"Prepare live failed: {exc}", "error")
+    return redirect(url_for("index"))
+
+
+@app.post("/oauth/youtube/start")
+@login_required
+def oauth_youtube_start():
+    try:
+        state = platforms.new_oauth_state()
+        session["oauth_yt_state"] = state
+        return redirect(platforms.youtube_authorize_url(get_secret, public_host(), state))
+    except platforms.PlatformError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("index"))
+
+
+@app.get("/oauth/youtube/callback")
+@limiter.exempt
+def oauth_youtube_callback():
+    if not session.get("authed"):
+        return redirect(url_for("login"))
+    if request.args.get("state") != session.get("oauth_yt_state"):
+        flash("YouTube connect failed: invalid OAuth state.", "error")
+        return redirect(url_for("index"))
+    if request.args.get("error"):
+        flash(f"YouTube connect denied: {request.args.get('error')}", "error")
+        return redirect(url_for("index"))
+    code = request.args.get("code", "")
+    try:
+        platforms.youtube_exchange_code(get_secret, set_secret, public_host(), code)
+        flash("YouTube connected. Title/description will apply on Prepare live.", "ok")
+    except platforms.PlatformError as exc:
+        flash(str(exc), "error")
+    return redirect(url_for("index"))
+
+
+@app.post("/oauth/facebook/start")
+@login_required
+def oauth_facebook_start():
+    try:
+        state = platforms.new_oauth_state()
+        session["oauth_fb_state"] = state
+        return redirect(platforms.facebook_authorize_url(get_secret, public_host(), state))
+    except platforms.PlatformError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("index"))
+
+
+@app.get("/oauth/facebook/callback")
+@limiter.exempt
+def oauth_facebook_callback():
+    if not session.get("authed"):
+        return redirect(url_for("login"))
+    if request.args.get("state") != session.get("oauth_fb_state"):
+        flash("Facebook connect failed: invalid OAuth state.", "error")
+        return redirect(url_for("index"))
+    if request.args.get("error"):
+        flash(f"Facebook connect denied: {request.args.get('error_description') or request.args.get('error')}", "error")
+        return redirect(url_for("index"))
+    code = request.args.get("code", "")
+    try:
+        page_name = platforms.facebook_exchange_code(get_secret, set_secret, public_host(), code)
+        flash(f"Facebook connected to Page “{page_name}”.", "ok")
+    except platforms.PlatformError as exc:
+        flash(str(exc), "error")
+    return redirect(url_for("index"))
+
+
+@app.post("/oauth/credentials")
+@login_required
+def save_oauth_credentials():
+    """Store Google/Meta app credentials (one-time admin setup)."""
+    fields = {
+        "google-oauth-client-id": request.form.get("google_client_id", "").strip(),
+        "google-oauth-client-secret": request.form.get("google_client_secret", "").strip(),
+        "facebook-app-id": request.form.get("facebook_app_id", "").strip(),
+        "facebook-app-secret": request.form.get("facebook_app_secret", "").strip(),
+    }
+    try:
+        saved = []
+        for name, value in fields.items():
+            if value:
+                set_secret(name, value)
+                saved.append(name)
+        if not saved:
+            flash("Enter at least one credential value.", "error")
+        else:
+            flash("OAuth app credentials saved to Key Vault.", "ok")
+    except Exception as exc:  # noqa: BLE001
+        flash(f"Could not save credentials: {exc}", "error")
     return redirect(url_for("index"))
 
 

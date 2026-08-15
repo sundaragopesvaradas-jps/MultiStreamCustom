@@ -254,8 +254,45 @@ ol {
   accent-color: var(--accent);
 }
 
-.dest-toggles button {
-  width: fit-content;
+.oauth-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin: 0.75rem 0 1rem;
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  align-items: center;
+}
+
+.button-row button {
+  margin-top: 0;
+}
+
+textarea {
+  width: 100%;
+  padding: 0.7rem 0.8rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: #10161d;
+  color: var(--text);
+  font: inherit;
+  resize: vertical;
+  min-height: 6rem;
+}
+
+textarea:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+button:disabled,
+button[aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .hint {
