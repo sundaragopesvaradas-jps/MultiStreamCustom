@@ -108,7 +108,12 @@ fi
   cd "$DEMO/lib/zoom_meeting_sdk"
   if [[ -e libmeetingsdk.so && ! -e libmeetingsdk.so.1 ]]; then
     ln -sf libmeetingsdk.so libmeetingsdk.so.1
+  elif [[ -L libmeetingsdk.so.1 ]]; then
+    :
+  elif [[ -e libmeetingsdk.so.1 ]]; then
+    :
   fi
+  ls -la libmeetingsdk.so* || true
 )
 shopt -u nullglob
 
