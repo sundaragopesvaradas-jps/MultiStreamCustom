@@ -63,17 +63,6 @@ h3 {
   font-weight: 600;
 }
 
-.panel h3:first-of-type {
-  margin-top: 0.85rem;
-}
-
-.section-break {
-  height: 0;
-  margin: 2rem 0 1.75rem;
-  border: 0;
-  border-top: 1px solid color-mix(in srgb, var(--border) 80%, var(--muted));
-}
-
 .lede,
 .status {
   color: var(--muted);
@@ -85,7 +74,58 @@ section {
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 1.25rem 1.35rem;
-  margin-bottom: 1rem;
+  margin-bottom: 1.15rem;
+}
+
+/* Four page zones — distinct tint, shared surface language */
+.zone {
+  border-width: 1px;
+  border-style: solid;
+  box-shadow: inset 3px 0 0 var(--zone-accent, var(--border));
+}
+
+.zone h2 {
+  color: var(--zone-heading, var(--text));
+}
+
+.zone h3 {
+  margin: 1.35rem 0 0.45rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid color-mix(in srgb, var(--zone-accent, var(--border)) 35%, transparent);
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.zone h3:first-of-type {
+  margin-top: 0.75rem;
+}
+
+.zone-start {
+  --zone-accent: #2f9e74;
+  --zone-heading: #b8e6d0;
+  background: color-mix(in srgb, #1a3d32 55%, var(--surface));
+  border-color: color-mix(in srgb, #2f9e74 45%, var(--border));
+}
+
+.zone-live {
+  --zone-accent: #4a8ec8;
+  --zone-heading: #b9d6ef;
+  background: color-mix(in srgb, #1a2d42 55%, var(--surface));
+  border-color: color-mix(in srgb, #4a8ec8 45%, var(--border));
+}
+
+.zone-history {
+  --zone-accent: #c49a4a;
+  --zone-heading: #edd9a8;
+  background: color-mix(in srgb, #3a3020 50%, var(--surface));
+  border-color: color-mix(in srgb, #c49a4a 40%, var(--border));
+}
+
+.zone-advanced {
+  --zone-accent: #a86b6b;
+  --zone-heading: #e8c4c4;
+  background: color-mix(in srgb, #3a2428 48%, var(--surface));
+  border-color: color-mix(in srgb, #a86b6b 40%, var(--border));
 }
 
 .card-form {
