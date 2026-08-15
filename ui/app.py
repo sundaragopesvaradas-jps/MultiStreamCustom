@@ -75,14 +75,12 @@ LOGIN_LOCK_FILE = RUN_DIR / "login-lock.json"
 LOGIN_FAIL_LIMIT = 5
 LOGIN_LOCK_MINUTES = 60
 
-
 STATUS_LABELS = {
     "delivered": "Delivered",
     "failed": "Failed to connect",
     "no_data": "Connected, no video sent",
     "dropped_early": "Dropped within 10s",
 }
-
 
 def load_config() -> dict[str, str]:
     cfg: dict[str, str] = {}
@@ -95,26 +93,20 @@ def load_config() -> dict[str, str]:
             cfg[k.strip()] = v.strip()
     return cfg
 
-
 def kv_name() -> str:
     return os.environ.get("KEY_VAULT_NAME") or load_config().get("KEY_VAULT_NAME", "")
-
 
 def get_secret(name: str) -> str:
     return keyvault.get_secret(kv_name(), name)
 
-
 def set_secret(name: str, value: str) -> None:
     keyvault.set_secret(kv_name(), name, value)
-
 
 def set_secrets(values: dict[str, str]) -> None:
     keyvault.set_secrets(kv_name(), values)
 
-
 def get_secret_optional(name: str) -> str | None:
     return platforms.get_optional(get_secret, name)
-
 
 # Everything the control page needs in one parallel Key Vault round-trip.
 INDEX_SECRET_NAMES = (
@@ -142,10 +134,6 @@ INDEX_SECRET_NAMES = (
     "zoom-client-id",
     "zoom-client-secret",
     "zoom-meeting-id",
-    "zoom-sdk-key",
-    "zoom-sdk-secret",
-    "recording-storage-account",
-    "recording-storage-container",
     "smtp-user",
     "smtp-password",
 )
@@ -172,18 +160,15 @@ MANAGER_SECRET_NAMES = (
 ROLE_OWNER = "owner"
 ROLE_MANAGER = "manager"
 
-
 def _snap_value(snap: dict[str, str | None], name: str) -> str | None:
     value = (snap.get(name) or "").strip()
     if not value or value in {"REPLACE_ME", "MOVED_TO_HASH"}:
         return None
     return value
 
-
 def index_secret_snapshot(*, owner: bool) -> dict[str, str | None]:
     names = INDEX_SECRET_NAMES if owner else MANAGER_SECRET_NAMES
     return keyvault.get_secrets(kv_name(), names)
-
 
 def _pin_material(env_hash: str, env_plain: str, secret_hash: str, secret_plain: str) -> str | None:
     if os.environ.get(env_hash):
@@ -202,21 +187,17 @@ def _pin_material(env_hash: str, env_plain: str, secret_hash: str, secret_plain:
             return None
         return value
 
-
 def manager_pin_material() -> str | None:
     """Existing team PIN — becomes the manager account once an owner PIN exists."""
     return _pin_material("UI_PIN_HASH", "UI_PIN", "ui-pin-hash", "ui-pin")
-
 
 def owner_pin_material() -> str | None:
     return _pin_material(
         "UI_OWNER_PIN_HASH", "UI_OWNER_PIN", "ui-owner-pin-hash", "ui-owner-pin"
     )
 
-
 def owner_pin_configured() -> bool:
     return bool(owner_pin_material())
-
 
 def resolve_pin_role(candidate: str) -> str | None:
     """Return owner/manager role for a PIN, or None if it does not match."""
@@ -235,15 +216,12 @@ def resolve_pin_role(candidate: str) -> str | None:
         return ROLE_MANAGER
     return ROLE_OWNER
 
-
 def session_role() -> str:
     role = session.get("role") or ROLE_MANAGER
     return role if role in {ROLE_OWNER, ROLE_MANAGER} else ROLE_MANAGER
 
-
 def is_owner() -> bool:
     return session.get("authed") and session_role() == ROLE_OWNER
-
 
 def login_required(view):
     @wraps(view)
@@ -253,7 +231,6 @@ def login_required(view):
         return view(*args, **kwargs)
 
     return wrapped
-
 
 def owner_required(view):
     @wraps(view)
@@ -267,15 +244,12 @@ def owner_required(view):
 
     return wrapped
 
-
 def public_base() -> str:
     return platforms.public_base_url(public_host())
-
 
 def rtmp_host() -> str:
     """Hostname Zoom should publish to. Prefer the FQDN over a bare IP."""
     return public_base().split("://", 1)[-1].rstrip("/")
-
 
 def ingest_target() -> tuple[str, str, str]:
     """(stream_url, stream_key, page_url) for Zoom's custom livestream."""
@@ -285,10 +259,8 @@ def ingest_target() -> tuple[str, str, str]:
         public_base() + "/",
     )
 
-
 def sync_secrets() -> None:
     subprocess.run(["/opt/multistream/bin/sync-secrets.sh"], check=True)
-
 
 def hash_pin(pin: str, *, salt: bytes | None = None) -> str:
     if salt is None:
@@ -300,7 +272,6 @@ def hash_pin(pin: str, *, salt: bytes | None = None) -> str:
         HASH_ITERATIONS,
     )
     return f"{HASH_PREFIX}${HASH_ITERATIONS}${salt.hex()}${digest.hex()}"
-
 
 def verify_pin(candidate: str, stored: str) -> bool:
     stored = stored.strip()
@@ -323,12 +294,10 @@ def verify_pin(candidate: str, stored: str) -> bool:
     # Legacy plaintext (migrate on successful login / harden script)
     return hmac.compare_digest(candidate, stored)
 
-
 def public_host() -> str:
     if PUBLIC_HOST:
         return PUBLIC_HOST
     return load_config().get("PUBLIC_HOST", request.host.split(":")[0])
-
 
 def mask(value: str) -> str:
     if not value or value == "REPLACE_ME":
@@ -337,7 +306,6 @@ def mask(value: str) -> str:
         return "••••••••"
     return f"{value[:4]}••••{value[-4:]}"
 
-
 def humanize_bytes(value: int) -> str:
     size = float(value)
     for unit in ("B", "KB", "MB", "GB"):
@@ -345,7 +313,6 @@ def humanize_bytes(value: int) -> str:
             return f"{size:.0f} {unit}" if unit == "B" else f"{size:.1f} {unit}"
         size /= 1024
     return f"{size:.1f} GB"
-
 
 def humanize_duration(seconds: float) -> str:
     total = int(seconds)
@@ -357,14 +324,12 @@ def humanize_duration(seconds: float) -> str:
     hours, minutes = divmod(minutes, 60)
     return f"{hours}h {minutes}m"
 
-
 def local_time(iso_value: str) -> str:
     try:
         parsed = datetime.fromisoformat(iso_value.replace("Z", "+00:00"))
     except ValueError:
         return iso_value
     return parsed.astimezone(IST).strftime("%d %b %Y, %I:%M %p IST")
-
 
 def _lock_state() -> dict:
     if not LOGIN_LOCK_FILE.exists():
@@ -373,7 +338,6 @@ def _lock_state() -> dict:
         return json.loads(LOGIN_LOCK_FILE.read_text())
     except (OSError, json.JSONDecodeError):
         return {"by_ip": {}}
-
 
 def _save_lock_state(state: dict) -> None:
     RUN_DIR.mkdir(parents=True, exist_ok=True)
@@ -384,7 +348,6 @@ def _save_lock_state(state: dict) -> None:
         LOGIN_LOCK_FILE.chmod(0o600)
     except OSError:
         pass
-
 
 def login_lock_info(ip: str) -> tuple[bool, str]:
     """Return (locked, human message)."""
@@ -402,7 +365,6 @@ def login_lock_info(ip: str) -> tuple[bool, str]:
         return False, ""
     local = until.astimezone(IST).strftime("%d %b %Y, %I:%M %p IST")
     return True, f"Too many incorrect PIN attempts. Login locked until {local}."
-
 
 def record_login_failure(ip: str) -> tuple[bool, str]:
     """Track a failed PIN. Returns (just_locked, message)."""
@@ -452,14 +414,12 @@ def record_login_failure(ip: str) -> tuple[bool, str]:
     remaining = LOGIN_FAIL_LIMIT - int(entry["fails"])
     return False, f"Incorrect PIN. {remaining} attempt(s) left before a 60-minute lock."
 
-
 def clear_login_failures(ip: str) -> None:
     state = _lock_state()
     by_ip = state.get("by_ip") or {}
     if ip in by_ip:
         by_ip.pop(ip, None)
         _save_lock_state(state)
-
 
 def read_history(limit: int = 25) -> list[dict]:
     """Group per-destination records into sessions, newest first."""
@@ -505,7 +465,6 @@ def read_history(limit: int = 25) -> list[dict]:
         session["all_ok"] = all(dest["ok"] for dest in session["destinations"])
     return ordered[:limit]
 
-
 def read_enabled() -> dict[str, bool]:
     defaults = {"youtube": True, "facebook": True, "enhance": False}
     if not ENABLED_FILE.exists():
@@ -526,7 +485,6 @@ def read_enabled() -> dict[str, bool]:
             values["enhance"] = on
     return values
 
-
 def write_enabled(
     youtube: bool,
     facebook: bool,
@@ -544,7 +502,6 @@ def write_enabled(
     )
     os.chmod(ENABLED_FILE, 0o644)
 
-
 def destination_running(name: str) -> bool:
     pid_path = RUN_DIR / f"{name}.pid"
     if not pid_path.exists():
@@ -559,7 +516,6 @@ def destination_running(name: str) -> bool:
         return False
     return True
 
-
 def apply_destinations() -> str:
     result = subprocess.run(
         [str(APPLY_SCRIPT), "apply"],
@@ -568,7 +524,6 @@ def apply_destinations() -> str:
         text=True,
     )
     return (result.stdout or "") + (result.stderr or "")
-
 
 def live_status() -> dict:
     """Ask MediaMTX whether Zoom is publishing right now."""
@@ -584,18 +539,7 @@ def live_status() -> dict:
         "youtube_running": destination_running("youtube"),
         "facebook_running": destination_running("facebook"),
         "enhance_enabled": enabled["enhance"],
-        "recording_phase": "",
-        "recording_label": "",
     }
-    try:
-        sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-        from recording.status import public_status as recording_public_status
-
-        rec = recording_public_status()
-        status["recording_phase"] = rec.get("phase") or ""
-        status["recording_label"] = rec.get("label") or ""
-    except Exception:  # noqa: BLE001
-        pass
 
     try:
         with urllib.request.urlopen(MEDIAMTX_API, timeout=3) as response:
@@ -619,11 +563,9 @@ def live_status() -> dict:
         status["destinations_connected"] = status["readers"]
     return status
 
-
 @app.context_processor
 def inject_csrf() -> dict[str, str]:
     return {"csrf_token": generate_csrf}
-
 
 @app.get("/login")
 def login():
@@ -631,7 +573,6 @@ def login():
         return redirect(url_for("index"))
     locked, message = login_lock_info(get_remote_address())
     return render_template("login.html", login_locked=locked, lock_message=message)
-
 
 @app.post("/login")
 @limiter.limit("20 per hour")
@@ -666,12 +607,10 @@ def login_post():
     session.permanent = True
     return redirect(url_for("index"))
 
-
 @app.post("/logout")
 def logout():
     session.clear()
     return redirect(url_for("login"))
-
 
 @app.get("/")
 @login_required
@@ -705,10 +644,6 @@ def index():
     zoom_client_id = _snap_value(snap, "zoom-client-id") or ""
     zoom_client_secret = _snap_value(snap, "zoom-client-secret") or ""
     zoom_meeting_id = _snap_value(snap, "zoom-meeting-id") or ""
-    zoom_sdk_key = _snap_value(snap, "zoom-sdk-key") or ""
-    zoom_sdk_secret = _snap_value(snap, "zoom-sdk-secret") or ""
-    recording_storage_account = _snap_value(snap, "recording-storage-account") or ""
-    recording_storage_container = _snap_value(snap, "recording-storage-container") or ""
     smtp_user = _snap_value(snap, "smtp-user") or ""
     smtp_password = _snap_value(snap, "smtp-password") or ""
 
@@ -746,42 +681,11 @@ def index():
         verify_apis=False,
     )
 
-    recording_config = None
-    recording_schedule_text: dict[str, str] = {}
-    recording_running = False
-    recording_mode = ""
-    if owner:
-        sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-        from recording import store as recording_store
-        from recording.models import WEEKDAYS, WEEKDAY_LABELS
-        from recording.recorder import ZoomSdkRecorder
-
-        recording_config = recording_store.load()
-        for day in WEEKDAYS:
-            slots = recording_config.schedule.get(day) or []
-            recording_schedule_text[day] = ", ".join(
-                f"{slot.start}-{slot.end}" for slot in slots
-            )
-        try:
-            rec_status = ZoomSdkRecorder(get_secret, get_secret_optional).status()
-            recording_running = bool(rec_status.get("running"))
-            recording_mode = str(rec_status.get("mode") or "")
-        except Exception:  # noqa: BLE001
-            recording_running = False
-            recording_mode = ""
-    else:
-        WEEKDAY_LABELS = {}
-
     return render_template(
         "index.html",
         is_owner=owner,
         role=session_role(),
         owner_pin_configured=owner_pin_configured(),
-        recording=recording_config,
-        recording_schedule_text=recording_schedule_text,
-        recording_weekdays=WEEKDAY_LABELS if owner else {},
-        recording_running=recording_running,
-        recording_mode=recording_mode,
         zoom_api_ready=bool(zoom_account_id and zoom_client_id and zoom_client_secret),
         zoom_meeting_id=zoom_meeting_id,
         zoom_account_id_set=bool(zoom_account_id),
@@ -790,14 +694,6 @@ def index():
         zoom_client_id_masked=mask(zoom_client_id),
         zoom_client_secret_set=bool(zoom_client_secret),
         zoom_client_secret_masked=mask(zoom_client_secret),
-        zoom_sdk_key_set=bool(zoom_sdk_key),
-        zoom_sdk_key_masked=mask(zoom_sdk_key),
-        zoom_sdk_secret_set=bool(zoom_sdk_secret),
-        zoom_sdk_secret_masked=mask(zoom_sdk_secret),
-        recording_storage_account_set=bool(recording_storage_account),
-        recording_storage_account_masked=mask(recording_storage_account),
-        recording_storage_container_set=bool(recording_storage_container),
-        recording_storage_container_masked=mask(recording_storage_container),
         smtp_user_set=bool(smtp_user),
         smtp_user_value=smtp_user,
         smtp_password_set=bool(smtp_password),
@@ -837,19 +733,16 @@ def index():
         facebook_config_id_masked=mask(facebook_config_id),
     )
 
-
 @app.get("/history")
 @login_required
 def history():
     return render_template("history.html", sessions=read_history(limit=25))
-
 
 @app.get("/api/status")
 @login_required
 @limiter.exempt
 def api_status():
     return live_status()
-
 
 @app.post("/destinations")
 @login_required
@@ -884,7 +777,6 @@ def update_destinations():
     except Exception as exc:  # noqa: BLE001
         flash(f"Could not update destinations: {exc}", "error")
     return redirect(url_for("index"))
-
 
 def _prepare_lives(title: str, description: str, enabled: dict[str, bool]) -> tuple[list[str], list[str]]:
     """Create YT/FB lives for enabled destinations that need one."""
@@ -922,7 +814,6 @@ def _prepare_lives(title: str, description: str, enabled: dict[str, bool]) -> tu
     if enabled["facebook"] and status.facebook.ready and "Facebook" not in ready:
         ready.append("Facebook")
     return ready, failures
-
 
 @app.post("/go-live")
 @login_required
@@ -1004,7 +895,6 @@ def go_live():
     )
     return redirect(url_for("index"))
 
-
 @app.post("/stop-live")
 @login_required
 @limiter.limit("30 per hour")
@@ -1030,7 +920,6 @@ def stop_live():
         flash(f"Could not stop the Zoom livestream: {exc}", "error")
     return redirect(url_for("index"))
 
-
 @app.post("/keys")
 @owner_required
 def update_keys():
@@ -1050,7 +939,6 @@ def update_keys():
     except Exception as exc:  # noqa: BLE001
         flash(f"Update failed: {exc}", "error")
     return redirect(url_for("index"))
-
 
 @app.post("/pins")
 @owner_required
@@ -1104,105 +992,6 @@ def update_pins():
         flash(f"Could not update PINs: {exc}", "error")
     return redirect(url_for("index"))
 
-
-@app.post("/recording/instant/start")
-@owner_required
-def recording_instant_start():
-    """Start the Meeting SDK bot now, without waiting for a schedule slot."""
-    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-    from recording import pipeline as recording_pipeline
-
-    try:
-        result = recording_pipeline.start_instant()
-    except Exception as exc:  # noqa: BLE001
-        flash(f"Could not start recording: {exc}", "error")
-        return redirect(url_for("index"))
-
-    action = result.get("action")
-    if action == "started":
-        flash("Instant recording started — the bot is joining the meeting.", "ok")
-    elif action == "already_recording":
-        flash("Recording is already in progress.", "ok")
-    elif action == "meeting_not_running":
-        flash(result.get("error") or "The Zoom meeting is not running yet.", "error")
-    elif action == "no_meeting_id":
-        flash(result.get("error") or "Set a Zoom meeting ID in the schedule below first.", "error")
-    else:
-        flash(result.get("error") or f"Could not start recording ({action}).", "error")
-    return redirect(url_for("index"))
-
-
-@app.post("/recording/instant/stop")
-@owner_required
-def recording_instant_stop():
-    """Stop the current recording and upload the file."""
-    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-    from recording import pipeline as recording_pipeline
-
-    try:
-        result = recording_pipeline.stop_now(reason="instant recording stopped from owner console")
-    except Exception as exc:  # noqa: BLE001
-        flash(f"Could not stop recording: {exc}", "error")
-        return redirect(url_for("index"))
-
-    action = result.get("action")
-    if action == "stopped":
-        flash("Recording stopped — uploading to Azure Storage.", "ok")
-    elif action == "not_recording":
-        flash("Nothing is recording right now.", "ok")
-    else:
-        flash(f"Stop finished with status: {action}.", "ok")
-    return redirect(url_for("index"))
-
-
-@app.post("/recording/schedule")
-@owner_required
-def save_recording_schedule():
-    """Owner-only weekly IST schedule for the Meeting SDK recorder."""
-    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-    from recording import store as recording_store
-    from recording.models import RecordingConfig, TimeSlot, WEEKDAYS
-
-    enabled = request.form.get("recording_enabled") == "1"
-    meeting_id = request.form.get("recording_meeting_id", "").strip()
-    bot_name = request.form.get("recording_bot_name", "").strip()
-    schedule: dict = {}
-    try:
-        if meeting_id:
-            meeting_id = zoom.normalize_meeting_id(meeting_id)
-        for day in WEEKDAYS:
-            raw = request.form.get(f"slot_{day}", "").strip()
-            slots: list = []
-            if raw:
-                for piece in raw.split(","):
-                    piece = piece.strip()
-                    if not piece:
-                        continue
-                    if "-" not in piece:
-                        raise ValueError(
-                            f"{day}: use HH:MM-HH:MM (comma-separated for multiple)"
-                        )
-                    start, end = piece.split("-", 1)
-                    slot = TimeSlot(start=start.strip(), end=end.strip())
-                    slot.validate()
-                    slots.append(slot)
-            schedule[day] = slots
-        config = RecordingConfig(
-            enabled=enabled,
-            meeting_id=meeting_id,
-            bot_display_name=bot_name or "ISKCON Deoghar Archive",
-            schedule=schedule,
-        )
-        if enabled and not meeting_id:
-            flash("Enter a Zoom meeting ID before enabling recording.", "error")
-            return redirect(url_for("index"))
-        recording_store.save(config)
-        flash("Recording schedule saved.", "ok")
-    except Exception as exc:  # noqa: BLE001
-        flash(f"Could not save recording schedule: {exc}", "error")
-    return redirect(url_for("index"))
-
-
 @app.post("/metadata")
 @login_required
 def save_metadata():
@@ -1217,7 +1006,6 @@ def save_metadata():
     except Exception as exc:  # noqa: BLE001
         flash(f"Could not save metadata: {exc}", "error")
     return redirect(url_for("index"))
-
 
 @app.post("/defaults")
 @owner_required
@@ -1239,7 +1027,6 @@ def save_defaults():
     except Exception as exc:  # noqa: BLE001
         flash(f"Could not save defaults: {exc}", "error")
     return redirect(url_for("index"))
-
 
 @app.post("/prepare-live")
 @owner_required
@@ -1290,7 +1077,6 @@ def prepare_live():
         flash(f"Prepare live failed: {exc}", "error")
     return redirect(url_for("index"))
 
-
 @app.post("/metadata/push")
 @login_required
 @limiter.limit("30 per hour")
@@ -1336,7 +1122,6 @@ def push_metadata():
         )
     return redirect(url_for("index"))
 
-
 @app.post("/oauth/youtube/start")
 @owner_required
 def oauth_youtube_start():
@@ -1347,7 +1132,6 @@ def oauth_youtube_start():
     except platforms.PlatformError as exc:
         flash(str(exc), "error")
         return redirect(url_for("index"))
-
 
 @app.get("/oauth/youtube/callback")
 @limiter.exempt
@@ -1371,7 +1155,6 @@ def oauth_youtube_callback():
         flash(str(exc), "error")
     return redirect(url_for("index"))
 
-
 @app.post("/oauth/facebook/start")
 @owner_required
 def oauth_facebook_start():
@@ -1382,7 +1165,6 @@ def oauth_facebook_start():
     except platforms.PlatformError as exc:
         flash(str(exc), "error")
         return redirect(url_for("index"))
-
 
 @app.get("/oauth/facebook/callback")
 @limiter.exempt
@@ -1406,7 +1188,6 @@ def oauth_facebook_callback():
         flash(str(exc), "error")
     return redirect(url_for("index"))
 
-
 @app.post("/oauth/credentials")
 @owner_required
 def save_oauth_credentials():
@@ -1420,10 +1201,6 @@ def save_oauth_credentials():
         "zoom-account-id": request.form.get("zoom_account_id", "").strip(),
         "zoom-client-id": request.form.get("zoom_client_id", "").strip(),
         "zoom-client-secret": request.form.get("zoom_client_secret", "").strip(),
-        "zoom-sdk-key": request.form.get("zoom_sdk_key", "").strip(),
-        "zoom-sdk-secret": request.form.get("zoom_sdk_secret", "").strip(),
-        "recording-storage-account": request.form.get("recording_storage_account", "").strip(),
-        "recording-storage-container": request.form.get("recording_storage_container", "").strip(),
     }
     try:
         to_save = {name: value for name, value in fields.items() if value}
@@ -1435,7 +1212,6 @@ def save_oauth_credentials():
     except Exception as exc:  # noqa: BLE001
         flash(f"Could not save credentials: {exc}", "error")
     return redirect(url_for("index"))
-
 
 @app.post("/email/credentials")
 @owner_required
@@ -1476,7 +1252,6 @@ def save_email_credentials():
         flash(f"Saved, but Gmail rejected them: {detail}", "error")
     return redirect(url_for("index"))
 
-
 @app.post("/email/test")
 @owner_required
 def send_test_email():
@@ -1486,7 +1261,7 @@ def send_test_email():
         subject="ISKCON stream: test email",
         body=(
             "This is a test from the owner console.\n\n"
-            "If you are reading it, recording and streaming alerts will reach you."
+            "If you are reading it, streaming and login alerts will reach you."
         ),
     )
     if sent:
@@ -1495,7 +1270,6 @@ def send_test_email():
         ok, detail = notify.check_credentials(get_secret_optional)
         flash(f"Test email failed: {detail}" if not ok else "Test email failed. See logs.", "error")
     return redirect(url_for("index"))
-
 
 @app.get("/healthz")
 @limiter.exempt
@@ -1510,16 +1284,13 @@ def healthz():
         deployed_at = at_path.read_text().strip()
     return {"ok": True, "revision": revision, "deployed_at": deployed_at}
 
-
 @app.errorhandler(429)
 def ratelimit_handler(_exc):
     flash("Too many login attempts. Try again in 15 minutes.", "error")
     return render_template("login.html"), 429
 
-
 def main() -> None:
     app.run(host="127.0.0.1", port=8080)
-
 
 if __name__ == "__main__":
     main()

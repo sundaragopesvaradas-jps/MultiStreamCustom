@@ -32,7 +32,7 @@ which writes `zoom-account-id`, `zoom-client-id` and `zoom-client-secret` to Key
 | Outcome | Meaning |
 | --- | --- |
 | `start` succeeds **and** MediaMTX shows a ready path within ~45s | **PASS** — API path works for mobile hosts; build thin Start/Stop UI |
-| `start` fails, or succeeds but **no RTMP** arrives | **FAIL** — need Meeting SDK bot or co-host laptop |
+| `start` fails, or succeeds but **no RTMP** arrives | **FAIL** — need co-host laptop |
 
 Result: **PASS**.
 

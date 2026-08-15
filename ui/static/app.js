@@ -37,22 +37,6 @@ function formatLiveStatus(data) {
   return `Idle — no Zoom stream is publishing.${hint}`;
 }
 
-function updateRecordingBanner(data) {
-  const box = document.getElementById("recording-status");
-  const text = document.getElementById("recording-status-text");
-  if (!box || !text) return;
-  const phase = data.recording_phase || "";
-  if (phase === "recording" || phase === "processing") {
-    box.hidden = false;
-    box.classList.remove("banner-ok", "banner-warn");
-    box.classList.add(phase === "recording" ? "banner-ok" : "banner-warn");
-    text.textContent = data.recording_label || "";
-  } else {
-    box.hidden = true;
-    text.textContent = "";
-  }
-}
-
 async function refreshStatus() {
   try {
     const res = await fetch("/api/status", { credentials: "same-origin" });
@@ -60,7 +44,6 @@ async function refreshStatus() {
     const data = await res.json();
     const live = document.getElementById("live-status");
     if (live) live.textContent = formatLiveStatus(data);
-    updateRecordingBanner(data);
   } catch {
     /* ignore transient network errors */
   }

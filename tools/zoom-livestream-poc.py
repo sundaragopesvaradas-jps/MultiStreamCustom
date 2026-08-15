@@ -278,7 +278,7 @@ def cmd_start(meeting_id: str) -> None:
         "RESULT: FAIL — Zoom accepted start, but no RTMP arrived at MediaMTX.\n"
         "Interpretation: API start alone is not enough with a mobile-only host;\n"
         "Zoom likely still needs a desktop/SDK client to egress RTMP.\n"
-        "Next option: Meeting SDK bot (true Option B) or co-host laptop."
+        "Next option: co-host laptop with Zoom Custom Live Streaming."
     )
     raise SystemExit(2)
 

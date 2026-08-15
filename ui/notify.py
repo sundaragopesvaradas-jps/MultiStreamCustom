@@ -1,4 +1,4 @@
-"""Email alerts for MultiStream (login lockouts, etc.).
+"""Email alerts for MultiStream (login lockouts, stream issues, etc.).
 
 Uses Gmail SMTP by default. Store these Key Vault secrets:
   smtp-user      — full Gmail address used to send

@@ -39,16 +39,6 @@
       {% endif %}
     </p>
 
-    <div
-      id="recording-status"
-      class="banner {% if live.recording_phase == 'recording' %}banner-ok{% elif live.recording_phase == 'processing' %}banner-warn{% endif %}"
-      role="status"
-      aria-live="polite"
-      {% if live.recording_phase not in ('recording', 'processing') %}hidden{% endif %}
-    >
-      <p id="recording-status-text">{{ live.recording_label }}</p>
-    </div>
-
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
         <ul class="flash" role="status" aria-live="polite">
@@ -329,83 +319,6 @@
         <button type="submit">Save PINs</button>
       </form>
 
-      <h3 id="instant-recording-heading">Instant Zoom recording</h3>
-      <p class="hint">
-        Start or stop the Meeting SDK bot right now, without waiting for a schedule slot.
-        Uses the Zoom meeting ID saved in the schedule section below. The meeting must
-        already be running. Instant Off also stops a scheduled recording that is in progress.
-      </p>
-      <p class="status" aria-live="polite">
-        {% if recording_running %}
-          Recording now
-          {% if recording_mode == "instant" %}(instant){% elif recording_mode == "scheduled" %}(scheduled){% endif %}
-        {% else %}
-          Not recording
-        {% endif %}
-        · Meeting ID:
-        {% if recording and recording.meeting_id %}{{ recording.meeting_id }}{% else %}not set — save one below{% endif %}
-      </p>
-      <div class="button-row">
-        <form method="post" action="{{ url_for('recording_instant_start') }}">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button type="submit" {% if recording_running or not recording or not recording.meeting_id %}disabled aria-disabled="true"{% endif %}>
-            Instant recording On
-          </button>
-        </form>
-        <form method="post" action="{{ url_for('recording_instant_stop') }}">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button type="submit" class="ghost" {% if not recording_running %}disabled aria-disabled="true"{% endif %}>
-            Instant recording Off
-          </button>
-        </form>
-      </div>
-
-      <h3 id="recording-heading">Scheduled Zoom recording (Meeting SDK)</h3>
-      <p class="hint">
-        The bot joins as a participant during the slots below (IST), records with Meeting SDK
-        raw data, uploads to Azure Blob, emails you when a file is saved, and deletes blobs
-        older than 6 months. See <code>docs/RECORDING_SETUP.md</code> for SDK + storage setup.
-      </p>
-      <form method="post" action="{{ url_for('save_recording_schedule') }}" class="card-form">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <label class="toggle">
-          <input type="checkbox" name="recording_enabled" value="1" {% if recording and recording.enabled %}checked{% endif %}>
-          <span>Enable scheduled recording</span>
-        </label>
-        <label for="recording_meeting_id">Zoom meeting ID</label>
-        <input
-          id="recording_meeting_id"
-          name="recording_meeting_id"
-          type="text"
-          inputmode="numeric"
-          value="{{ recording.meeting_id if recording else zoom_meeting_id }}"
-          placeholder="891 2345 6789"
-          autocomplete="off"
-        >
-        <label for="recording_bot_name">Bot display name in Zoom</label>
-        <input
-          id="recording_bot_name"
-          name="recording_bot_name"
-          type="text"
-          maxlength="64"
-          value="{{ recording.bot_display_name if recording else 'ISKCON Deoghar Archive' }}"
-          autocomplete="off"
-        >
-        <p class="hint">Slots are IST. Format <code>HH:MM-HH:MM</code>. Multiple slots: comma-separated, e.g. <code>05:00-09:00, 16:00-18:00</code>.</p>
-        {% for day, label in recording_weekdays.items() %}
-        <label for="slot_{{ day }}">{{ label }}</label>
-        <input
-          id="slot_{{ day }}"
-          name="slot_{{ day }}"
-          type="text"
-          value="{{ recording_schedule_text.get(day, '') }}"
-          placeholder="05:00-18:00"
-          autocomplete="off"
-        >
-        {% endfor %}
-        <button type="submit">Save recording schedule</button>
-      </form>
-
       <h3 id="oauth-connect-heading">Connect platforms</h3>
       <div class="status" role="status">
         YouTube API:
@@ -548,32 +461,9 @@
         <label for="zoom_client_secret">Zoom Client Secret</label>
         <input id="zoom_client_secret" name="zoom_client_secret" type="password" autocomplete="off" placeholder="Leave blank to keep current">
 
-        <h3 id="recording-creds-heading">Recording (Meeting SDK + Blob)</h3>
-        <p class="hint">
-          Meeting SDK key/secret (raw data enabled) and the Azure Storage account that holds
-          recordings. Container defaults to <code>recordings</code>.
-        </p>
-        <p class="status" aria-live="polite">
-          SDK Key: {% if zoom_sdk_key_set %}set ({{ zoom_sdk_key_masked }}){% else %}not set{% endif %}
-          · SDK Secret: {% if zoom_sdk_secret_set %}set ({{ zoom_sdk_secret_masked }}){% else %}not set{% endif %}
-          · Storage: {% if recording_storage_account_set %}set ({{ recording_storage_account_masked }}){% else %}not set{% endif %}
-          · Container: {% if recording_storage_container_set %}set ({{ recording_storage_container_masked }}){% else %}not set{% endif %}
-        </p>
-        <label for="zoom_sdk_key">Zoom Meeting SDK Key</label>
-        <input id="zoom_sdk_key" name="zoom_sdk_key" type="text" autocomplete="off" placeholder="Leave blank to keep current">
-        <label for="zoom_sdk_secret">Zoom Meeting SDK Secret</label>
-        <input id="zoom_sdk_secret" name="zoom_sdk_secret" type="password" autocomplete="off" placeholder="Leave blank to keep current">
-        <label for="recording_storage_account">Azure Storage account name</label>
-        <input id="recording_storage_account" name="recording_storage_account" type="text" autocomplete="off" placeholder="Leave blank to keep current">
-        <label for="recording_storage_container">Blob container</label>
-        <input id="recording_storage_container" name="recording_storage_container" type="text" autocomplete="off" placeholder="Leave blank to keep current">
-
-        <button type="submit">Save app credentials</button>
-      </form>
-
       <h3 id="email-alerts-heading">Email alerts</h3>
       <p class="hint">
-        Where recording and streaming alerts are sent. Gmail needs an
+        Where streaming and login alerts are sent. Gmail needs an
         <strong>App Password</strong>, not your normal password: Google Account
         &rsaquo; Security &rsaquo; App passwords. 2-Step Verification must stay
         on, because turning it off deletes every App Password.

@@ -28,51 +28,31 @@ fi
 
 echo "==> UI"
 rsync -a --delete --exclude '.venv' "$ROOT/ui/" /opt/multistream/ui/
-rsync -a --delete "$ROOT/recording/" /opt/multistream/recording/
 /opt/multistream/ui/.venv/bin/pip install -q -r /opt/multistream/ui/requirements.txt
 
-mkdir -p /var/log/multistream /opt/multistream/run /var/lib/multistream/recordings
-chmod 700 /var/log/multistream /opt/multistream/run /var/lib/multistream/recordings
+mkdir -p /var/log/multistream /opt/multistream/run
+chmod 700 /var/log/multistream /opt/multistream/run
 
-mkdir -p /opt/multistream/zoom-sdk/scripts
-if [[ -d "$ROOT/vm/zoom-sdk" ]]; then
-  rsync -a "$ROOT/vm/zoom-sdk/" /opt/multistream/zoom-sdk/scripts/
-  install -m 755 "$ROOT/vm/zoom-sdk/build-recorder.sh" /opt/multistream/bin/zoom-sdk-build.sh
-  install -m 755 "$ROOT/vm/zoom-sdk/setup-audio.sh" /opt/multistream/bin/zoom-sdk-setup-audio.sh
-fi
-if [[ -x /opt/multistream/zoom-sdk/sample/demo/bin/meetingSDKDemo ]]; then
-  install -m 755 "$ROOT/vm/zoom-sdk/zoom-sdk-recorder.sh" /opt/multistream/bin/zoom-sdk-recorder
-  install -m 755 "$ROOT/vm/zoom-sdk/selftest-encoder.sh" /opt/multistream/bin/zoom-sdk-selftest.sh
-  # Keep the compiled bot in step with the raw-data writers in this repo. A
-  # deploy that ships new C++ but leaves the old binary running is silent and
-  # very confusing, so rebuild in place; a failed build keeps what works.
-  DEMO_SRC=/opt/multistream/zoom-sdk/sample/demo
-  writers_changed=0
-  for src in MultistreamSync.h ZoomSDKRenderer.cpp ZoomSDKAudioRawData.cpp; do
-    if ! cmp -s "$ROOT/vm/zoom-sdk/src/$src" "$DEMO_SRC/$src"; then
-      writers_changed=1
-      install -m 644 "$ROOT/vm/zoom-sdk/src/$src" "$DEMO_SRC/$src"
-    fi
-  done
-  if [[ "$writers_changed" -eq 1 ]]; then
-    echo "==> Raw-data writers changed; rebuilding meetingSDKDemo"
-    if ! cmake --build "$DEMO_SRC/build" -j"$(nproc)"; then
-      echo "WARNING: rebuild failed; the previously built bot is still installed" >&2
-    fi
-  fi
-elif [[ ! -x /opt/multistream/bin/zoom-sdk-recorder ]] \
-  || grep -q "not installed yet" /opt/multistream/bin/zoom-sdk-recorder 2>/dev/null; then
-  install -m 755 "$ROOT/vm/zoom-sdk-recorder.placeholder.sh" /opt/multistream/bin/zoom-sdk-recorder
-fi
-
-echo "==> Recording timers"
-cp "$ROOT/vm/systemd/multistream-recording.service" /etc/systemd/system/
-cp "$ROOT/vm/systemd/multistream-recording.timer" /etc/systemd/system/
-cp "$ROOT/vm/systemd/multistream-recording-purge.service" /etc/systemd/system/
-cp "$ROOT/vm/systemd/multistream-recording-purge.timer" /etc/systemd/system/
-systemctl daemon-reload
-systemctl enable --now multistream-recording.timer
-systemctl enable --now multistream-recording-purge.timer
+# Remove any leftover Meeting SDK recording install from earlier releases.
+systemctl disable --now multistream-recording.timer multistream-recording-purge.timer 2>/dev/null || true
+rm -f /etc/systemd/system/multistream-recording.service \
+  /etc/systemd/system/multistream-recording.timer \
+  /etc/systemd/system/multistream-recording-purge.service \
+  /etc/systemd/system/multistream-recording-purge.timer
+rm -rf /opt/multistream/recording /opt/multistream/zoom-sdk \
+  /var/lib/multistream/recordings /opt/multistream/run/recording-work \
+  /opt/multistream/run/recording-jobs
+rm -f /opt/multistream/bin/zoom-sdk-recorder \
+  /opt/multistream/bin/zoom-sdk-build.sh \
+  /opt/multistream/bin/zoom-sdk-setup-audio.sh \
+  /opt/multistream/bin/zoom-sdk-selftest.sh \
+  /opt/multistream/etc/recording-schedule.json \
+  /opt/multistream/run/zoom-sdk-recorder.json \
+  /opt/multistream/run/recording-processing.json \
+  /opt/multistream/run/recording-alert-state.json \
+  /var/log/multistream/zoom-sdk-recorder.log
+pkill -f meetingSDKDemo 2>/dev/null || true
+pkill -f zoom-sdk-recorder 2>/dev/null || true
 
 echo "==> Restart"
 /opt/multistream/bin/refresh-ui-env.sh
@@ -87,6 +67,5 @@ systemctl restart mediamtx.service
 
 sleep 2
 systemctl is-active multistream-ui.service mediamtx.service
-systemctl is-active multistream-recording.timer multistream-recording-purge.timer || true
 echo "=== Update complete ==="
 echo "deploy_marker=$REV"
