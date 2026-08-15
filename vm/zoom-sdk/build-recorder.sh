@@ -35,7 +35,7 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq \
   build-essential cmake pkg-config git xz-utils ca-certificates \
-  libcurl4-openssl-dev openssl \
+  libcurl4-openssl-dev openssl ffmpeg libswscale-dev \
   libx11-xcb1 libxcb-xfixes0 libxcb-shape0 libxcb-shm0 \
   libxcb-randr0 libxcb-image0 libxcb-keysyms1 libxcb-xtest0 \
   libdbus-1-3 libglib2.0-0 libgbm1 libxfixes3 libgl1 libdrm2 \
@@ -117,7 +117,18 @@ fi
 )
 shopt -u nullglob
 
-echo "==> Patching sample for display_name + any-resolution capture"
+echo "==> Installing Multistream raw-data writers"
+# These replace the sample's writers wholesale: they stream into a live encoder
+# instead of dumping raw YUV/PCM to disk. The sample's headers are kept as-is.
+for src in MultistreamSync.h ZoomSDKRenderer.cpp ZoomSDKAudioRawData.cpp; do
+  if [[ ! -f "$REPO_ZOOM_SDK/src/$src" ]]; then
+    echo "Missing $REPO_ZOOM_SDK/src/$src" >&2
+    exit 1
+  fi
+  install -m 644 "$REPO_ZOOM_SDK/src/$src" "$DEMO/$src"
+done
+
+echo "==> Patching sample for display_name + audio/video capture fixes"
 # Sample CMakeLists copies config.txt into the build tree — create a stub if missing.
 if [[ ! -f "$DEMO/config.txt" ]]; then
   cat > "$DEMO/config.txt" <<'EOF'
@@ -132,99 +143,7 @@ SendVideoRawData: "false"
 SendAudioRawData: "false"
 EOF
 fi
-python3 - <<'PY'
-from pathlib import Path
-
-demo = Path("/opt/multistream/zoom-sdk/sample/demo")
-cpp = (demo / "meeting_sdk_demo.cpp").read_text(encoding="utf-8", errors="replace")
-
-# Parse display_name from config.txt
-needle = 'if (config.find("recording_token") != config.end())'
-insert = '''
-	if (config.find("display_name") != config.end()) {
-		display_name=config["display_name"];
-		std::cout << "display_name: " << display_name << std::endl;
-	}
-'''
-if "display_name=config" not in cpp:
-    # declare the variable with the others
-    cpp = cpp.replace(
-        "std::string meeting_number, token, meeting_password, recording_token,onBehalfOf_Token;",
-        "std::string meeting_number, token, meeting_password, recording_token,onBehalfOf_Token, display_name;",
-        1,
-    )
-    cpp = cpp.replace(
-        "std::string meeting_number, token, meeting_password, recording_token;",
-        "std::string meeting_number, token, meeting_password, recording_token, display_name;",
-        1,
-    )
-    if needle in cpp and "display_name=config" not in cpp:
-        cpp = cpp.replace(needle, insert + "\n\t" + needle, 1)
-
-# Use display_name instead of hard-coded LinuxChun
-cpp = cpp.replace(
-    'withoutloginParam.userName = "LinuxChun";',
-    'withoutloginParam.userName = display_name.empty() ? "ISKCON Deoghar Archive" : display_name.c_str();',
-)
-# Start muted/video-off so the bot is less disruptive
-cpp = cpp.replace("withoutloginParam.isVideoOff = false;", "withoutloginParam.isVideoOff = true;")
-cpp = cpp.replace("withoutloginParam.isAudioOff = false;", "withoutloginParam.isAudioOff = true;")
-# Fix Zoom sample bug: `!recording_token.size() == 0` is always false.
-cpp = cpp.replace(
-    "if (!recording_token.size() == 0)",
-    "if (recording_token.size() != 0)",
-)
-# Meeting SDK 7.x added FrameDataFormat to setExternalVideoSource.
-cpp = cpp.replace(
-    "SDKError err = p_videoSourceHelper->setExternalVideoSource(virtual_camera_video_source);",
-    "SDKError err = p_videoSourceHelper->setExternalVideoSource(virtual_camera_video_source, FrameDataFormat_I420_FULL);",
-)
-
-(demo / "meeting_sdk_demo.cpp").write_text(cpp, encoding="utf-8")
-
-renderer = (demo / "ZoomSDKRenderer.cpp").read_text(encoding="utf-8", errors="replace")
-# Save frames at any resolution (sample only kept height==720). Dimensions are
-# written as a tiny sidecar without tricky escape sequences.
-replacement = """
- static int locked_w = 0, locked_h = 0;
- int w = data->GetStreamWidth();
- int h = data->GetStreamHeight();
- if (locked_w == 0) {
-   locked_w = w;
-   locked_h = h;
-   FILE* meta = fopen("video.size", "w");
-   if (meta) {
-     fprintf(meta, "width=%d", locked_w);
-     fputc(10, meta);
-     fprintf(meta, "height=%d", locked_h);
-     fputc(10, meta);
-     fclose(meta);
-   }
- }
- if (w == locked_w && h == locked_h) {
-   SaveToRawYUVFile(data);
- }
-"""
-if "locked_w" not in renderer:
-    import re
-    renderer2, n = re.subn(
-        r"if\s*\(\s*data->GetStreamHeight\(\)\s*==\s*720\s*\)\s*\{\s*SaveToRawYUVFile\(data\);\s*\}",
-        replacement.strip(),
-        renderer,
-        count=1,
-    )
-    if n == 0:
-        renderer2 = renderer.replace(
-            "SaveToRawYUVFile(data);",
-            replacement.strip(),
-            1,
-        )
-    renderer = renderer2
-if "#include <cstdio>" not in renderer and "fprintf" in renderer:
-    renderer = renderer.replace("#include <iostream>", "#include <iostream>\n#include <cstdio>", 1)
-(demo / "ZoomSDKRenderer.cpp").write_text(renderer, encoding="utf-8")
-print("patches applied")
-PY
+python3 "$REPO_ZOOM_SDK/patch-sample.py" "$DEMO"
 
 echo "==> Building meetingSDKDemo"
 rm -rf "$DEMO/build" "$DEMO/bin"
@@ -262,9 +181,20 @@ touch /opt/multistream/zoom-sdk/.built
 date -u +%Y-%m-%dT%H:%M:%SZ > /opt/multistream/zoom-sdk/.built
 echo "SDK=$(basename "$TARBALL")" >> /opt/multistream/zoom-sdk/.built
 
-echo "==> Smoke: binary + libs"
-ldd "$DEMO/bin/meetingSDKDemo" | head -40 || true
-"$DEMO/bin/meetingSDKDemo" --help >/dev/null 2>&1 || true
-/opt/multistream/bin/zoom-sdk-recorder 2>&1 | head -5 || true
+echo "==> Smoke: shared libraries resolve"
+# Never launch the demo here: it ignores its arguments and joins whatever
+# meeting config.txt names, so a smoke run would hang forever.
+if ldd "$DEMO/bin/meetingSDKDemo" | grep -q "not found"; then
+  echo "Unresolved shared libraries:" >&2
+  ldd "$DEMO/bin/meetingSDKDemo" | grep "not found" >&2
+  exit 1
+fi
+ldd "$DEMO/bin/meetingSDKDemo" | grep -E "swscale|meetingsdk" || true
+
+echo "==> Selftest: live encoder path"
+install -m 755 "$REPO_ZOOM_SDK/selftest-encoder.sh" /opt/multistream/bin/zoom-sdk-selftest.sh
+if [[ "${ZOOM_SDK_SKIP_SELFTEST:-0}" != "1" ]]; then
+  /opt/multistream/bin/zoom-sdk-selftest.sh 20
+fi
 
 echo "==> Done. Recorder ready at /opt/multistream/bin/zoom-sdk-recorder"

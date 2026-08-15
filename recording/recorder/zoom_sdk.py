@@ -44,6 +44,11 @@ STATE_FILE = Path(
 )
 JOB_DIR = Path(os.environ.get("ZOOM_SDK_RECORDER_JOB_DIR", "/opt/multistream/run/recording-jobs"))
 
+# After the bot leaves, the wrapper still has to drain the encoder's buffers and
+# rewrite the MP4 index. Killing it early leaves an unplayable file, so wait
+# generously — the UI shows "Processing" for the whole window.
+STOP_TIMEOUT_SECONDS = int(os.environ.get("ZOOM_SDK_RECORDER_STOP_TIMEOUT", "660"))
+
 
 class RecorderError(Exception):
     pass
@@ -195,13 +200,14 @@ class ZoomSdkRecorder(MeetingRecorder):
                 os.kill(int(pid), signal.SIGTERM)
             except OSError:
                 pass
-            # Wait briefly for a clean flush of the media file.
-            for _ in range(30):
+            # The wrapper leaves the meeting, then finishes the encode before it
+            # exits, so this wait is what makes the file playable.
+            for _ in range(STOP_TIMEOUT_SECONDS):
                 try:
                     os.kill(int(pid), 0)
                 except OSError:
                     break
-                time.sleep(0.5)
+                time.sleep(1)
             else:
                 try:
                     os.kill(int(pid), signal.SIGKILL)

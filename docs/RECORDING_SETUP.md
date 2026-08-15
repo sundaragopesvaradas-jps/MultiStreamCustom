@@ -88,8 +88,37 @@ sudo apt-get install -y build-essential cmake pkg-config openssl ca-certificates
    (the sample's `setup-pulseaudio.sh` does both).
 5. `cmake -B build && make` in `demo/`, then install a wrapper as
    `/opt/multistream/bin/zoom-sdk-recorder` that reads our job JSON, writes the
-   sample's `config.txt`, runs the binary, and on SIGTERM muxes the raw YUV +
-   PCM output into the requested MP4 with FFmpeg.
+   sample's `config.txt`, and runs the binary.
+
+`vm/zoom-sdk/build-recorder.sh` does all of the above. It is the only supported
+way to build: it replaces the sample's raw-data writers with the versions in
+`vm/zoom-sdk/src/` and applies `vm/zoom-sdk/patch-sample.py`, which fails the
+build if any of its anchors are missing.
+
+### How recording is encoded
+
+The sample writes raw YUV and PCM to disk and expects you to mux afterwards.
+At 720p that is roughly 70 GB and several minutes of post-processing per hour,
+which does not fit on this VM. Instead:
+
+* `src/ZoomSDKRenderer.cpp` letterboxes every frame into one fixed size (Zoom
+  changes resolution mid-call) and a pacing thread emits a constant
+  `MULTISTREAM_VIDEO_FPS`, repeating the last frame when none arrives.
+* `src/ZoomSDKAudioRawData.cpp` writes Zoom's mixed PCM straight through and
+  starts the shared clock, which the video pacer waits on so both tracks begin
+  at the same instant.
+* The wrapper points both at FIFOs and runs one ffmpeg that encodes live, so
+  the MP4 is complete a second or two after the bot leaves and costs about
+  350 MB per hour.
+
+Because the two tracks are constant-rate and start together, nothing depends on
+timestamps. `vm/zoom-sdk/selftest-encoder.sh` feeds synthetic audio and video
+through the same arrangement and fails if the durations drift apart; the build
+script runs it automatically.
+
+Tunables (environment variables on the wrapper): `MULTISTREAM_VIDEO_WIDTH`,
+`MULTISTREAM_VIDEO_HEIGHT`, `MULTISTREAM_VIDEO_FPS`, `MULTISTREAM_X264_PRESET`,
+`MULTISTREAM_X264_CRF`, `MULTISTREAM_AUDIO_WAIT`.
 
 Contract (what our Python adapter launches):
 

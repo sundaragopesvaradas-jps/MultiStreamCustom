@@ -5,6 +5,9 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
+# A tick that ends a recording waits for the encoder to finish the MP4. The 90s
+# default would kill it mid-file.
+TimeoutStartSec=1800
 WorkingDirectory=/opt/multistream
 EnvironmentFile=/opt/multistream/etc/multistream.env
 EnvironmentFile=-/opt/multistream/etc/ui.env

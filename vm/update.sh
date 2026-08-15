@@ -42,6 +42,24 @@ if [[ -d "$ROOT/vm/zoom-sdk" ]]; then
 fi
 if [[ -x /opt/multistream/zoom-sdk/sample/demo/bin/meetingSDKDemo ]]; then
   install -m 755 "$ROOT/vm/zoom-sdk/zoom-sdk-recorder.sh" /opt/multistream/bin/zoom-sdk-recorder
+  install -m 755 "$ROOT/vm/zoom-sdk/selftest-encoder.sh" /opt/multistream/bin/zoom-sdk-selftest.sh
+  # Keep the compiled bot in step with the raw-data writers in this repo. A
+  # deploy that ships new C++ but leaves the old binary running is silent and
+  # very confusing, so rebuild in place; a failed build keeps what works.
+  DEMO_SRC=/opt/multistream/zoom-sdk/sample/demo
+  writers_changed=0
+  for src in MultistreamSync.h ZoomSDKRenderer.cpp ZoomSDKAudioRawData.cpp; do
+    if ! cmp -s "$ROOT/vm/zoom-sdk/src/$src" "$DEMO_SRC/$src"; then
+      writers_changed=1
+      install -m 644 "$ROOT/vm/zoom-sdk/src/$src" "$DEMO_SRC/$src"
+    fi
+  done
+  if [[ "$writers_changed" -eq 1 ]]; then
+    echo "==> Raw-data writers changed; rebuilding meetingSDKDemo"
+    if ! cmake --build "$DEMO_SRC/build" -j"$(nproc)"; then
+      echo "WARNING: rebuild failed; the previously built bot is still installed" >&2
+    fi
+  fi
 elif [[ ! -x /opt/multistream/bin/zoom-sdk-recorder ]] \
   || grep -q "not installed yet" /opt/multistream/bin/zoom-sdk-recorder 2>/dev/null; then
   install -m 755 "$ROOT/vm/zoom-sdk-recorder.placeholder.sh" /opt/multistream/bin/zoom-sdk-recorder
