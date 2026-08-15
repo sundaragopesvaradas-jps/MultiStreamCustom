@@ -183,8 +183,9 @@ cpp = cpp.replace(
 (demo / "meeting_sdk_demo.cpp").write_text(cpp, encoding="utf-8")
 
 renderer = (demo / "ZoomSDKRenderer.cpp").read_text(encoding="utf-8", errors="replace")
-# Save any resolution (not only height==720) and record size for ffmpeg.
-replacement = r'''
+# Save frames at any resolution (sample only kept height==720). Dimensions are
+# written as a tiny sidecar without tricky escape sequences.
+replacement = """
  static int locked_w = 0, locked_h = 0;
  int w = data->GetStreamWidth();
  int h = data->GetStreamHeight();
@@ -193,14 +194,17 @@ replacement = r'''
    locked_h = h;
    FILE* meta = fopen("video.size", "w");
    if (meta) {
-     fprintf(meta, "width=%d\nheight=%d\n", locked_w, locked_h);
+     fprintf(meta, "width=%d", locked_w);
+     fputc(10, meta);
+     fprintf(meta, "height=%d", locked_h);
+     fputc(10, meta);
      fclose(meta);
    }
  }
  if (w == locked_w && h == locked_h) {
    SaveToRawYUVFile(data);
  }
-'''
+"""
 if "locked_w" not in renderer:
     import re
     renderer2, n = re.subn(
