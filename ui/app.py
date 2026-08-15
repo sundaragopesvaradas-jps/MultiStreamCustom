@@ -438,6 +438,12 @@ def index():
     fb_watch = get_secret_optional("facebook-watch-url") or ""
     fb_page = get_secret_optional("facebook-page-name") or ""
 
+    google_client_id = get_secret_optional("google-oauth-client-id") or ""
+    google_client_secret = get_secret_optional("google-oauth-client-secret") or ""
+    facebook_app_id = get_secret_optional("facebook-app-id") or ""
+    facebook_app_secret = get_secret_optional("facebook-app-secret") or ""
+    facebook_config_id = get_secret_optional("facebook-login-config-id") or ""
+
     return render_template(
         "index.html",
         zoom_server=zoom_server,
@@ -457,6 +463,16 @@ def index():
         facebook_watch_url=fb_watch,
         facebook_page_name=fb_page,
         oauth_redirect_base=public_base(),
+        google_client_id_set=bool(google_client_id),
+        google_client_id_masked=mask(google_client_id),
+        google_client_secret_set=bool(google_client_secret),
+        google_client_secret_masked=mask(google_client_secret),
+        facebook_app_id_set=bool(facebook_app_id),
+        facebook_app_id_masked=mask(facebook_app_id),
+        facebook_app_secret_set=bool(facebook_app_secret),
+        facebook_app_secret_masked=mask(facebook_app_secret),
+        facebook_config_id_set=bool(facebook_config_id),
+        facebook_config_id_masked=mask(facebook_config_id),
     )
 
 

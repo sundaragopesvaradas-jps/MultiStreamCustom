@@ -253,6 +253,13 @@
         and
         <code>{{ oauth_redirect_base }}/oauth/facebook/callback</code>
       </p>
+      <p class="status" aria-live="polite">
+        Google Client ID: {% if google_client_id_set %}set ({{ google_client_id_masked }}){% else %}not set{% endif %}
+        · Client Secret: {% if google_client_secret_set %}set ({{ google_client_secret_masked }}){% else %}not set{% endif %}
+        · Facebook App ID: {% if facebook_app_id_set %}set ({{ facebook_app_id_masked }}){% else %}not set{% endif %}
+        · App Secret: {% if facebook_app_secret_set %}set ({{ facebook_app_secret_masked }}){% else %}not set{% endif %}
+        · Config ID: {% if facebook_config_id_set %}set ({{ facebook_config_id_masked }}){% else %}not set{% endif %}
+      </p>
       <form method="post" action="{{ url_for('save_oauth_credentials') }}" class="card-form">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <label for="google_client_id">Google OAuth Client ID</label>
