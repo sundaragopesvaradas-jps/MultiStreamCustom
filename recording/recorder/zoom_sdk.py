@@ -116,6 +116,15 @@ class ZoomSdkRecorder(MeetingRecorder):
                 f"Meeting SDK recorder binary not found at {self._binary}. "
                 "Follow docs/RECORDING_SETUP.md to install the Zoom Linux Meeting SDK raw-data sample."
             )
+        try:
+            head = self._binary.read_text(encoding="utf-8", errors="ignore")[:400]
+        except OSError:
+            head = ""
+        if "not installed yet" in head:
+            raise RecorderNotInstalled(
+                f"Meeting SDK recorder at {self._binary} is still the placeholder. "
+                "Run /opt/multistream/bin/zoom-sdk-build.sh on the VM after placing the SDK tarball."
+            )
 
         sdk_key = self._get_optional("zoom-sdk-key")
         sdk_secret = self._get_optional("zoom-sdk-secret")

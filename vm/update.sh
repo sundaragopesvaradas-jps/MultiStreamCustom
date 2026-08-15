@@ -34,7 +34,16 @@ rsync -a --delete "$ROOT/recording/" /opt/multistream/recording/
 mkdir -p /var/log/multistream /opt/multistream/run /var/lib/multistream/recordings
 chmod 700 /var/log/multistream /opt/multistream/run /var/lib/multistream/recordings
 
-if [[ ! -x /opt/multistream/bin/zoom-sdk-recorder ]]; then
+mkdir -p /opt/multistream/zoom-sdk/scripts
+if [[ -d "$ROOT/vm/zoom-sdk" ]]; then
+  rsync -a "$ROOT/vm/zoom-sdk/" /opt/multistream/zoom-sdk/scripts/
+  install -m 755 "$ROOT/vm/zoom-sdk/build-recorder.sh" /opt/multistream/bin/zoom-sdk-build.sh
+  install -m 755 "$ROOT/vm/zoom-sdk/setup-audio.sh" /opt/multistream/bin/zoom-sdk-setup-audio.sh
+fi
+if [[ -x /opt/multistream/zoom-sdk/sample/demo/bin/meetingSDKDemo ]]; then
+  install -m 755 "$ROOT/vm/zoom-sdk/zoom-sdk-recorder.sh" /opt/multistream/bin/zoom-sdk-recorder
+elif [[ ! -x /opt/multistream/bin/zoom-sdk-recorder ]] \
+  || grep -q "not installed yet" /opt/multistream/bin/zoom-sdk-recorder 2>/dev/null; then
   install -m 755 "$ROOT/vm/zoom-sdk-recorder.placeholder.sh" /opt/multistream/bin/zoom-sdk-recorder
 fi
 
