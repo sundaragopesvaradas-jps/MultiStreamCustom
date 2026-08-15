@@ -74,6 +74,21 @@ def _sdk_jwt(sdk_key: str, sdk_secret: str, meeting_number: str, *, role: int = 
     return jwt.encode(payload, sdk_secret, algorithm="HS256")
 
 
+def _prune_stale_jobs(*, older_than_hours: int = 24) -> None:
+    """Drop manifests orphaned by a recorder that never stopped cleanly."""
+    cutoff = time.time() - older_than_hours * 3600
+    try:
+        entries = list(JOB_DIR.glob("job-*.json"))
+    except OSError:
+        return
+    for entry in entries:
+        try:
+            if entry.stat().st_mtime < cutoff:
+                entry.unlink(missing_ok=True)
+        except OSError:
+            continue
+
+
 class ZoomSdkRecorder(MeetingRecorder):
     def __init__(
         self,
@@ -146,6 +161,7 @@ class ZoomSdkRecorder(MeetingRecorder):
         output_path = output_dir / f"zoom-{digits}-{stamp}.mp4"
 
         JOB_DIR.mkdir(parents=True, exist_ok=True)
+        _prune_stale_jobs()
         job_path = JOB_DIR / f"job-{stamp}.json"
         job = {
             "meeting_number": digits,
@@ -213,6 +229,14 @@ class ZoomSdkRecorder(MeetingRecorder):
                     os.kill(int(pid), signal.SIGKILL)
                 except OSError:
                     pass
+        # The job manifest holds a Meeting SDK token and the meeting passcode;
+        # there is no reason to keep it once the bot has left.
+        job_path = state.get("job_path")
+        if job_path:
+            try:
+                Path(job_path).unlink(missing_ok=True)
+            except OSError:
+                pass
         self._write_state({})
         if output and output.exists() and output.stat().st_size > 0:
             return RecorderResult(ok=True, output_path=output, message="Recording saved locally.")
