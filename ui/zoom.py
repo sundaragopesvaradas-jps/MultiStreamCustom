@@ -127,7 +127,11 @@ def _api(
     return _request(
         method,
         f"{API}{path}",
-        headers={"Authorization": f"Bearer {token}"},
+        headers={
+            "Authorization": f"Bearer {token}",
+            # Without this Zoom answers some validation errors in XML.
+            "Accept": "application/json",
+        },
         body=body,
     )
 
@@ -150,6 +154,16 @@ def _explain(status: int, payload: dict | str, action: str) -> str:
     code = payload.get("code") if isinstance(payload, dict) else None
     message = payload.get("message") if isinstance(payload, dict) else str(payload)
 
+    fields = payload.get("errors") if isinstance(payload, dict) else None
+    if isinstance(fields, list):
+        details = "; ".join(
+            f"{item.get('field')}: {item.get('message')}"
+            for item in fields
+            if isinstance(item, dict) and item.get("field")
+        )
+        if details:
+            message = f"{message} [{details}]"
+
     if status == 404:
         return (
             f"Zoom could not find that meeting ({message}). The meeting must be "
@@ -166,6 +180,11 @@ def _explain(status: int, payload: dict | str, action: str) -> str:
             "scopes and that Custom Live Streaming is enabled on the account."
         )
     return f"Zoom {action} failed ({status}): {message}"
+
+
+def _display_name_rejected(payload: dict | str) -> bool:
+    text = json.dumps(payload) if isinstance(payload, dict) else str(payload)
+    return "display_name" in text
 
 
 def get_meeting(get_secret: GetSecret, meeting_id: str) -> dict:
@@ -207,24 +226,50 @@ def configure_livestream(
         raise ZoomError(_explain(status, payload, "configure"))
 
 
+DISPLAY_NAME_MAX = 64
+# Zoom accepts far less here than YouTube or Facebook do in a title: pipes,
+# emoji and most symbols make it reject the whole start call with
+# "settings.display_name: Invalid field."
+DISPLAY_NAME_EXTRA = " -_.,:'()&"
+DISPLAY_NAME_SEPARATORS = "|/\\\u2013\u2014"
+
+
+def safe_display_name(value: str, fallback: str = "MultiStream") -> str:
+    """Reduce a stream title to something Zoom's livestream validator accepts."""
+    kept = []
+    for ch in value or "":
+        if (ch.isascii() and ch.isalnum()) or ch in DISPLAY_NAME_EXTRA:
+            kept.append(ch)
+        elif ch in DISPLAY_NAME_SEPARATORS:
+            kept.append(" - ")
+        else:
+            kept.append(" ")
+    text = " ".join("".join(kept).split())[:DISPLAY_NAME_MAX].strip(" -,.:")
+    return text or fallback
+
+
 def start_livestream(
     get_secret: GetSecret,
     meeting_id: str,
     *,
     display_name: str = "ISKCON Deoghar",
 ) -> None:
+    path = f"/meetings/{urllib.parse.quote(meeting_id)}/livestream/status"
     status, payload = _api(
         get_secret,
         "PATCH",
-        f"/meetings/{urllib.parse.quote(meeting_id)}/livestream/status",
+        path,
         {
             "action": "start",
             "settings": {
                 "active_speaker_name": True,
-                "display_name": display_name[:64],
+                "display_name": safe_display_name(display_name),
             },
         },
     )
+    if status >= 400 and _display_name_rejected(payload):
+        # Going live matters more than the on-stream label, so drop it and retry.
+        status, payload = _api(get_secret, "PATCH", path, {"action": "start"})
     if status >= 400:
         raise ZoomError(_explain(status, payload, "start"))
 
