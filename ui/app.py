@@ -666,21 +666,6 @@ def index():
     fb_watch = _snap_value(snap, "facebook-watch-url") or ""
     fb_page = _snap_value(snap, "facebook-page-name") or ""
 
-    # Cheap readiness from the same snapshot — no extra Key Vault round-trips.
-    def snap_get(name: str) -> str:
-        value = _snap_value(snap, name)
-        if value is None:
-            raise keyvault.KeyVaultError(f"Secret {name} not found.")
-        return value
-
-    readiness = platforms.prepare_readiness(
-        snap_get,
-        set_secret,
-        youtube_enabled=enabled["youtube"],
-        facebook_enabled=enabled["facebook"],
-        verify_apis=False,
-    )
-
     return render_template(
         "index.html",
         is_owner=owner,
@@ -719,8 +704,6 @@ def index():
         facebook_watch_url=fb_watch,
         facebook_page_name=fb_page,
         oauth_redirect_base=public_base(),
-        prepare_ready=readiness.ready,
-        prepare_message=readiness.message,
         google_client_id_set=bool(google_client_id),
         google_client_id_masked=mask(google_client_id),
         google_client_secret_set=bool(google_client_secret),

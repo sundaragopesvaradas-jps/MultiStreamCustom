@@ -49,16 +49,6 @@
       {% endif %}
     {% endwith %}
 
-    {% if prepare_ready %}
-    <div class="banner banner-ok" role="status">
-      <p>{{ prepare_message }}</p>
-    </div>
-    {% else %}
-    <div class="banner banner-warn" role="alert">
-      <p>{{ prepare_message }}</p>
-    </div>
-    {% endif %}
-
     <p
       id="meeting-status"
       class="meeting-status"
