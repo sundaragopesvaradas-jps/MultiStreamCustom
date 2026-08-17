@@ -322,11 +322,11 @@ ol {
 }
 
 .meeting-status {
-  margin: 0.45rem 0 0.35rem;
-  padding: 0.45rem 0.7rem;
+  margin: 0 0 1.25rem;
+  padding: 0.85rem 1rem;
   border-radius: 8px;
   border: 1px solid var(--border);
-  font-size: 0.95rem;
+  font-size: 1rem;
   font-weight: 600;
   color: var(--muted);
   background: color-mix(in srgb, var(--muted) 10%, transparent);
