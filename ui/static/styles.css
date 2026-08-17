@@ -321,6 +321,37 @@ ol {
   color: var(--muted);
 }
 
+.meeting-status {
+  margin: 0.45rem 0 0.35rem;
+  padding: 0.45rem 0.7rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--muted) 10%, transparent);
+}
+
+.meeting-status[data-state="in_progress"] {
+  color: #cdf3da;
+  background: color-mix(in srgb, var(--ok) 18%, transparent);
+  border-color: color-mix(in srgb, var(--ok) 45%, transparent);
+}
+
+.meeting-status[data-state="not_started"],
+.meeting-status[data-state="missing"] {
+  color: #f5e6c8;
+  background: color-mix(in srgb, #c9a227 16%, transparent);
+  border-color: color-mix(in srgb, #c9a227 40%, transparent);
+}
+
+.meeting-status[data-state="error"],
+.meeting-status[data-state="unconfigured"] {
+  color: #f8d5cd;
+  background: color-mix(in srgb, var(--danger) 18%, transparent);
+  border-color: color-mix(in srgb, var(--danger) 45%, transparent);
+}
+
 .dest-toggles {
   margin-top: 0.85rem;
   display: grid;

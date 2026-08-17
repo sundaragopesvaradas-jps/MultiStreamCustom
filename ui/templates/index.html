@@ -127,8 +127,17 @@
           value="{{ zoom_meeting_id }}"
           placeholder="891 2345 6789"
           autocomplete="off"
-          aria-describedby="meeting-hint"
+          aria-describedby="meeting-status meeting-hint"
         >
+        <p
+          id="meeting-status"
+          class="meeting-status"
+          role="status"
+          aria-live="polite"
+          data-zoom-ready="{{ '1' if zoom_api_ready else '0' }}"
+        >
+          Checking meeting status…
+        </p>
         <p id="meeting-hint" class="hint">
           The meeting must be scheduled on the connected Zoom account and already in progress.
           Whoever is hosting it can be on mobile.

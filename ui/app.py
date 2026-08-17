@@ -744,6 +744,56 @@ def history():
 def api_status():
     return live_status()
 
+
+@app.get("/api/meeting-status")
+@login_required
+@limiter.exempt
+def api_meeting_status():
+    """Report whether a Zoom meeting is currently in progress."""
+    if not zoom.configured(get_secret):
+        return {
+            "state": "unconfigured",
+            "meeting_id": "",
+            "message": "Zoom API is not configured.",
+        }
+
+    raw = (request.args.get("meeting_id") or "").strip()
+    if not raw:
+        raw = get_secret_optional("zoom-meeting-id") or ""
+    if not raw.strip():
+        return {
+            "state": "missing",
+            "meeting_id": "",
+            "message": "No meeting ID entered.",
+        }
+
+    try:
+        meeting_id = zoom.normalize_meeting_id(raw)
+        detail = zoom.get_meeting(get_secret, meeting_id)
+    except zoom.ZoomError as exc:
+        return {
+            "state": "error",
+            "meeting_id": raw.strip(),
+            "message": str(exc),
+        }
+
+    status = str(detail.get("status") or "").lower()
+    topic = str(detail.get("topic") or "").strip()
+    in_progress = status == "started"
+    message = (
+        f"Meeting in progress{f' — {topic}' if topic else ''}."
+        if in_progress
+        else f"Meeting not in progress{f' — {topic}' if topic else ''}."
+    )
+    return {
+        "state": "in_progress" if in_progress else "not_started",
+        "meeting_id": meeting_id,
+        "topic": topic,
+        "zoom_status": status,
+        "message": message,
+    }
+
+
 @app.post("/destinations")
 @login_required
 def update_destinations():

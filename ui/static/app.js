@@ -52,3 +52,59 @@ async function refreshStatus() {
 if (document.getElementById("live-status")) {
   setInterval(refreshStatus, 5000);
 }
+
+function setMeetingStatus(state, message) {
+  const el = document.getElementById("meeting-status");
+  if (!el) return;
+  el.dataset.state = state;
+  el.textContent = message;
+}
+
+async function refreshMeetingStatus() {
+  const el = document.getElementById("meeting-status");
+  const input = document.getElementById("meeting_id");
+  if (!el || !input) return;
+
+  if (el.dataset.zoomReady !== "1") {
+    setMeetingStatus("unconfigured", "Zoom API is not configured.");
+    return;
+  }
+
+  const meetingId = input.value.trim();
+  if (!meetingId) {
+    setMeetingStatus("missing", "No meeting ID entered.");
+    return;
+  }
+
+  setMeetingStatus("checking", "Checking meeting status…");
+  try {
+    const url =
+      "/api/meeting-status?meeting_id=" + encodeURIComponent(meetingId);
+    const res = await fetch(url, { credentials: "same-origin" });
+    if (!res.ok) {
+      setMeetingStatus("error", "Could not check meeting status.");
+      return;
+    }
+    const data = await res.json();
+    setMeetingStatus(data.state || "error", data.message || "Unknown status.");
+  } catch {
+    setMeetingStatus("error", "Could not check meeting status.");
+  }
+}
+
+(function initMeetingStatus() {
+  const input = document.getElementById("meeting_id");
+  const el = document.getElementById("meeting-status");
+  if (!input || !el) return;
+
+  let debounce = null;
+  const schedule = () => {
+    clearTimeout(debounce);
+    debounce = setTimeout(refreshMeetingStatus, 350);
+  };
+
+  refreshMeetingStatus();
+  input.addEventListener("change", refreshMeetingStatus);
+  input.addEventListener("blur", refreshMeetingStatus);
+  input.addEventListener("input", schedule);
+})();
