@@ -782,7 +782,8 @@ def api_meeting_status():
 def update_destinations():
     youtube = request.form.get("youtube") == "1"
     facebook = request.form.get("facebook") == "1"
-    enhance = request.form.get("enhance") == "1"
+    # Managers cannot toggle enhance; always keep direct copy.
+    enhance = is_owner() and request.form.get("enhance") == "1"
     if not youtube and not facebook:
         flash("Keep at least one destination on.", "error")
         return redirect(url_for("index"))
@@ -855,7 +856,8 @@ def go_live():
     """One action: pick destinations, set title, create lives, tell Zoom to stream."""
     youtube = request.form.get("youtube") == "1"
     facebook = request.form.get("facebook") == "1"
-    enhance = request.form.get("enhance") == "1"
+    # Managers cannot enable enhance; force direct copy on this B2s VM.
+    enhance = is_owner() and request.form.get("enhance") == "1"
     title = request.form.get("title", "").strip()
     description = request.form.get("description", "").strip()
     meeting_raw = request.form.get("meeting_id", "").strip()

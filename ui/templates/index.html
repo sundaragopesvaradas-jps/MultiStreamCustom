@@ -88,15 +88,20 @@
             <input type="checkbox" name="facebook" value="1" {% if facebook_enabled %}checked{% endif %}>
             <span>Facebook {% if live.facebook_running %}(live){% endif %}</span>
           </label>
+          {% if is_owner %}
           <label class="toggle">
             <input type="checkbox" name="enhance" value="1" {% if enhance_enabled %}checked{% endif %}>
             <span>Enhance audio &amp; video before YouTube / Facebook</span>
           </label>
+          {% endif %}
         </fieldset>
+        {% if is_owner %}
         <p class="hint">
           Enhance re-encodes on the VM (noise reduction, speech loudness, light sharpen).
-          Clearer than a raw Zoom copy, but adds a few seconds of delay and uses more CPU.
+          Clearer than a raw Zoom copy, but adds delay and uses more CPU.
+          On this B2s VM enhance only reaches about 0.72× real time, so YouTube/Facebook will stall — leave it off unless you upgrade the VM.
         </p>
+        {% endif %}
 
         <label for="title">2 · Video title</label>
         <input
@@ -175,16 +180,20 @@
             <input type="checkbox" name="facebook" value="1" {% if facebook_enabled %}checked{% endif %}>
             <span>Facebook {% if live.facebook_running %}(live){% endif %}</span>
           </label>
+          {% if is_owner %}
           <label class="toggle">
             <input type="checkbox" name="enhance" value="1" {% if enhance_enabled %}checked{% endif %}>
             <span>Enhance audio &amp; video</span>
           </label>
+          {% endif %}
         </fieldset>
         <button type="submit">Apply destinations</button>
       </form>
       <p class="hint">
-        Turn a destination off/on, or flip enhance mid-stream — pushes restart within a few seconds.
-        Enhance uses more CPU (works best on B2ms/B4ms); off = fastest direct copy.
+        Turn a destination off/on{% if is_owner %}, or flip enhance mid-stream{% endif %} — pushes restart within a few seconds.
+        {% if is_owner %}
+        Enhance uses more CPU; on this B2s VM it only reaches about 0.72× real time and will stall the stream — leave it off unless you upgrade the VM. Off = fastest direct copy.
+        {% endif %}
       </p>
 
       <h3 id="meta-heading">Title &amp; description</h3>
