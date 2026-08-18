@@ -387,6 +387,14 @@ fieldset.dest-toggles {
   accent-color: var(--accent);
 }
 
+.toggle-note {
+  display: inline;
+  margin-left: 0.25rem;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--muted);
+}
+
 .oauth-actions {
   display: flex;
   flex-wrap: wrap;

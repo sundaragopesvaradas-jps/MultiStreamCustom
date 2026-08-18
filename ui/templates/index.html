@@ -91,7 +91,10 @@
           {% if is_owner %}
           <label class="toggle">
             <input type="checkbox" name="enhance" value="1" {% if enhance_enabled %}checked{% endif %}>
-            <span>Enhance audio &amp; video before YouTube / Facebook</span>
+            <span>
+              Enhance audio &amp; video before YouTube / Facebook
+              <span class="toggle-note">(B2s ≈ 0.72× — will stall)</span>
+            </span>
           </label>
           {% endif %}
         </fieldset>
@@ -99,7 +102,6 @@
         <p class="hint">
           Enhance re-encodes on the VM (noise reduction, speech loudness, light sharpen).
           Clearer than a raw Zoom copy, but adds delay and uses more CPU.
-          On this B2s VM enhance only reaches about 0.72× real time, so YouTube/Facebook will stall — leave it off unless you upgrade the VM.
         </p>
         {% endif %}
 
@@ -183,7 +185,10 @@
           {% if is_owner %}
           <label class="toggle">
             <input type="checkbox" name="enhance" value="1" {% if enhance_enabled %}checked{% endif %}>
-            <span>Enhance audio &amp; video</span>
+            <span>
+              Enhance audio &amp; video
+              <span class="toggle-note">(B2s ≈ 0.72× — will stall)</span>
+            </span>
           </label>
           {% endif %}
         </fieldset>
@@ -191,9 +196,7 @@
       </form>
       <p class="hint">
         Turn a destination off/on{% if is_owner %}, or flip enhance mid-stream{% endif %} — pushes restart within a few seconds.
-        {% if is_owner %}
-        Enhance uses more CPU; on this B2s VM it only reaches about 0.72× real time and will stall the stream — leave it off unless you upgrade the VM. Off = fastest direct copy.
-        {% endif %}
+        {% if is_owner %}Off = fastest direct copy.{% endif %}
       </p>
 
       <h3 id="meta-heading">Title &amp; description</h3>
