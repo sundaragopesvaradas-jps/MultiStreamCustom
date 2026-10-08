@@ -82,6 +82,12 @@ STATUS_LABELS = {
     "dropped_early": "Dropped within 10s",
 }
 
+STREAM_PRESETS_SECRET = "stream-presets"
+STREAM_PRESETS_MAX = 50
+STREAM_PRESET_NAME_MAX = 80
+STREAM_PRESET_TITLE_MAX = 100
+STREAM_PRESET_DESCRIPTION_MAX = 5000
+
 def load_config() -> dict[str, str]:
     cfg: dict[str, str] = {}
     if CONFIG_ENV.exists():
@@ -125,6 +131,7 @@ INDEX_SECRET_NAMES = (
     "default-stream-description",
     "stream-title",
     "stream-description",
+    STREAM_PRESETS_SECRET,
     "youtube-watch-url",
     "facebook-watch-url",
     "lives-prepared-at",
@@ -139,7 +146,7 @@ INDEX_SECRET_NAMES = (
     "stream-end-grace-seconds",
 )
 
-# Manager console skips section 4 — fewer Key Vault reads on their page load.
+# Manager console skips section 5 — fewer Key Vault reads on their page load.
 MANAGER_SECRET_NAMES = (
     "youtube-stream-key",
     "facebook-stream-key",
@@ -147,6 +154,7 @@ MANAGER_SECRET_NAMES = (
     "default-stream-description",
     "stream-title",
     "stream-description",
+    STREAM_PRESETS_SECRET,
     "youtube-watch-url",
     "facebook-watch-url",
     "lives-prepared-at",
@@ -166,6 +174,54 @@ def _snap_value(snap: dict[str, str | None], name: str) -> str | None:
     if not value or value in {"REPLACE_ME", "MOVED_TO_HASH"}:
         return None
     return value
+
+def _normalize_preset(raw: object) -> dict[str, str] | None:
+    if not isinstance(raw, dict):
+        return None
+    preset_id = str(raw.get("id") or "").strip()
+    name = str(raw.get("name") or "").strip()
+    title = str(raw.get("title") or "").strip()
+    description = str(raw.get("description") or "").strip()
+    if not preset_id or not name or not title:
+        return None
+    return {
+        "id": preset_id[:64],
+        "name": name[:STREAM_PRESET_NAME_MAX],
+        "title": title[:STREAM_PRESET_TITLE_MAX],
+        "description": description[:STREAM_PRESET_DESCRIPTION_MAX],
+    }
+
+def parse_stream_presets(raw: str | None) -> list[dict[str, str]]:
+    """Parse saved presets JSON; ignore corrupt or partial entries."""
+    if not raw or not raw.strip():
+        return []
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(data, list):
+        return []
+    presets: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for item in data:
+        preset = _normalize_preset(item)
+        if not preset or preset["id"] in seen:
+            continue
+        seen.add(preset["id"])
+        presets.append(preset)
+        if len(presets) >= STREAM_PRESETS_MAX:
+            break
+    return presets
+
+def load_stream_presets(*, snap: dict[str, str | None] | None = None) -> list[dict[str, str]]:
+    if snap is not None:
+        raw = _snap_value(snap, STREAM_PRESETS_SECRET)
+    else:
+        raw = get_secret_optional(STREAM_PRESETS_SECRET)
+    return parse_stream_presets(raw)
+
+def save_stream_presets(presets: list[dict[str, str]]) -> None:
+    set_secret(STREAM_PRESETS_SECRET, json.dumps(presets, ensure_ascii=False))
 
 def index_secret_snapshot(*, owner: bool) -> dict[str, str | None]:
     names = INDEX_SECRET_NAMES if owner else MANAGER_SECRET_NAMES
@@ -211,7 +267,7 @@ def resolve_pin_role(candidate: str) -> str | None:
         return None
 
     # Until an owner PIN is created, the existing PIN keeps full access so the
-    # operator is never locked out of section 4. After owner PIN exists, this
+    # operator is never locked out of section 5. After owner PIN exists, this
     # same PIN is manager-only.
     if owner_mat:
         return ROLE_MANAGER
@@ -673,6 +729,7 @@ def index():
     )
     title = _snap_value(snap, "stream-title") or default_title
     description = _snap_value(snap, "stream-description") or default_description
+    stream_presets = load_stream_presets(snap=snap)
     yt_watch = _snap_value(snap, "youtube-watch-url") or ""
     fb_watch = _snap_value(snap, "facebook-watch-url") or ""
     fb_page = _snap_value(snap, "facebook-page-name") or ""
@@ -709,6 +766,8 @@ def index():
         oauth=oauth,
         stream_title=title,
         stream_description=description,
+        stream_presets=stream_presets,
+        stream_presets_max=STREAM_PRESETS_MAX,
         default_live_title=default_title,
         default_live_description=default_description,
         youtube_watch_url=yt_watch,
@@ -1032,7 +1091,7 @@ def update_pins():
         elif owner_pin:
             flash(
                 "Owner PIN saved. The existing team PIN is now the manager PIN "
-                "(sections 1–3 only).",
+                "(sections 1–4 only).",
                 "ok",
             )
         else:
@@ -1054,6 +1113,66 @@ def save_metadata():
         flash("Title and description saved.", "ok")
     except Exception as exc:  # noqa: BLE001
         flash(f"Could not save metadata: {exc}", "error")
+    return redirect(url_for("index"))
+
+@app.post("/presets")
+@login_required
+@limiter.limit("60 per hour")
+def add_preset():
+    name = request.form.get("name", "").strip()
+    title = request.form.get("title", "").strip()
+    description = request.form.get("description", "").strip()
+    if not name:
+        flash("Enter a short name for the preset.", "error")
+        return redirect(url_for("index"))
+    if not title:
+        flash("Preset title is required.", "error")
+        return redirect(url_for("index"))
+
+    name = name[:STREAM_PRESET_NAME_MAX]
+    title = title[:STREAM_PRESET_TITLE_MAX]
+    description = description[:STREAM_PRESET_DESCRIPTION_MAX]
+
+    try:
+        presets = load_stream_presets()
+        if len(presets) >= STREAM_PRESETS_MAX:
+            flash(
+                f"Preset limit reached ({STREAM_PRESETS_MAX}). Delete one before adding another.",
+                "error",
+            )
+            return redirect(url_for("index"))
+        presets.append(
+            {
+                "id": secrets.token_hex(8),
+                "name": name,
+                "title": title,
+                "description": description or title,
+            }
+        )
+        save_stream_presets(presets)
+        flash(f'Preset "{name}" saved.', "ok")
+    except Exception as exc:  # noqa: BLE001
+        flash(f"Could not save preset: {exc}", "error")
+    return redirect(url_for("index"))
+
+@app.post("/presets/delete")
+@login_required
+@limiter.limit("60 per hour")
+def delete_preset():
+    preset_id = request.form.get("preset_id", "").strip()
+    if not preset_id:
+        flash("Choose a preset to delete.", "error")
+        return redirect(url_for("index"))
+    try:
+        presets = load_stream_presets()
+        kept = [p for p in presets if p["id"] != preset_id]
+        if len(kept) == len(presets):
+            flash("That preset was already removed.", "error")
+            return redirect(url_for("index"))
+        save_stream_presets(kept)
+        flash("Preset deleted.", "ok")
+    except Exception as exc:  # noqa: BLE001
+        flash(f"Could not delete preset: {exc}", "error")
     return redirect(url_for("index"))
 
 @app.post("/defaults")

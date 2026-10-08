@@ -108,3 +108,51 @@ async function refreshMeetingStatus() {
   input.addEventListener("blur", refreshMeetingStatus);
   input.addEventListener("input", schedule);
 })();
+
+function loadStreamPresets() {
+  const el = document.getElementById("stream-presets-data");
+  if (!el) return {};
+  try {
+    const list = JSON.parse(el.textContent || "[]");
+    if (!Array.isArray(list)) return {};
+    const byId = {};
+    for (const preset of list) {
+      if (preset && preset.id) byId[preset.id] = preset;
+    }
+    return byId;
+  } catch {
+    return {};
+  }
+}
+
+(function initPresetSelects() {
+  const presets = loadStreamPresets();
+  document.querySelectorAll(".preset-select").forEach((select) => {
+    select.addEventListener("change", () => {
+      const preset = presets[select.value];
+      const titleId = select.getAttribute("data-preset-title");
+      const descriptionId = select.getAttribute("data-preset-description");
+      const announceId = select.getAttribute("data-preset-announce");
+      const titleEl = titleId ? document.getElementById(titleId) : null;
+      const descriptionEl = descriptionId
+        ? document.getElementById(descriptionId)
+        : null;
+      const announceEl = announceId
+        ? document.getElementById(announceId)
+        : null;
+
+      if (!preset || !titleEl) {
+        if (announceEl) announceEl.textContent = "";
+        return;
+      }
+
+      titleEl.value = preset.title || "";
+      if (descriptionEl) {
+        descriptionEl.value = preset.description || "";
+      }
+      if (announceEl) {
+        announceEl.textContent = `Filled title and description from preset ${preset.name}.`;
+      }
+    });
+  });
+})();
