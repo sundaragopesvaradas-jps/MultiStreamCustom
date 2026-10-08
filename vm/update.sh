@@ -13,6 +13,9 @@ echo "==> Relay scripts"
 install -m 755 "$ROOT/vm/apply-destinations.sh" /opt/multistream/bin/apply-destinations.sh
 install -m 755 "$ROOT/vm/on-stream-ready.sh" /opt/multistream/bin/on-stream-ready.sh
 install -m 755 "$ROOT/vm/on-stream-end.sh" /opt/multistream/bin/on-stream-end.sh
+install -m 755 "$ROOT/vm/schedule-stream-end.sh" /opt/multistream/bin/schedule-stream-end.sh
+install -m 755 "$ROOT/vm/cancel-stream-end.sh" /opt/multistream/bin/cancel-stream-end.sh
+install -m 755 "$ROOT/vm/end-platform-lives.py" /opt/multistream/bin/end-platform-lives.py
 install -m 755 "$ROOT/vm/push-destinations.sh" /opt/multistream/bin/push-destinations.sh
 install -m 755 "$ROOT/vm/stop-destinations.sh" /opt/multistream/bin/stop-destinations.sh
 install -m 755 "$ROOT/vm/sync-secrets.sh" /opt/multistream/bin/sync-secrets.sh

@@ -507,6 +507,34 @@
         <button type="submit" class="ghost">Send test email</button>
       </form>
 
+      <h3 id="stream-end-grace-heading">Stream-end grace period</h3>
+      <p class="hint">
+        When Zoom stops publishing, YouTube and Facebook pushes stop immediately.
+        After this many seconds with Zoom still idle, the YouTube and Facebook lives
+        are completed via API. If Zoom reconnects within the grace period, the same
+        lives keep going (avoids a mid-meeting YouTube URL change from a brief blip).
+      </p>
+      <form method="post" action="{{ url_for('save_stream_end_grace') }}" class="card-form" aria-labelledby="stream-end-grace-heading">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label for="stream_end_grace_seconds">Grace period (seconds)</label>
+        <input
+          id="stream_end_grace_seconds"
+          name="stream_end_grace_seconds"
+          type="number"
+          inputmode="numeric"
+          required
+          min="{{ stream_end_grace_min }}"
+          max="{{ stream_end_grace_max }}"
+          step="1"
+          value="{{ stream_end_grace_seconds }}"
+          aria-describedby="stream_end_grace_help"
+        >
+        <p id="stream_end_grace_help" class="hint">
+          Allowed range {{ stream_end_grace_min }}–{{ stream_end_grace_max }}. Default 30.
+        </p>
+        <button type="submit">Save grace period</button>
+      </form>
+
       <h3 id="tips-heading">Before you go live</h3>
       <ol>
         <li>One-time: connect YouTube and Facebook, and save the Zoom API app credentials (above).</li>
@@ -514,7 +542,7 @@
         <li>In section 1, tick destinations, enter title and meeting ID, then press Start streaming.</li>
         <li>Confirm both destinations on the live status before unmuting for the audience.</li>
         <li>To rename or change destinations mid-stream, use section 2 — never Prepare live while Zoom is publishing.</li>
-        <li>Ending the Zoom meeting ends everything. No stop click needed.</li>
+        <li>Ending the Zoom meeting (or Stop streaming) stops pushes immediately; platform lives complete after the grace period above.</li>
       </ol>
     </section>
     {% else %}

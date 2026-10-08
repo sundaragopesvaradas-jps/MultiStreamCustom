@@ -136,6 +136,7 @@ INDEX_SECRET_NAMES = (
     "zoom-meeting-id",
     "smtp-user",
     "smtp-password",
+    "stream-end-grace-seconds",
 )
 
 # Manager console skips section 4 — fewer Key Vault reads on their page load.
@@ -646,6 +647,16 @@ def index():
     zoom_meeting_id = _snap_value(snap, "zoom-meeting-id") or ""
     smtp_user = _snap_value(snap, "smtp-user") or ""
     smtp_password = _snap_value(snap, "smtp-password") or ""
+    stream_end_grace_seconds = platforms.DEFAULT_STREAM_END_GRACE_SECONDS
+    grace_raw = _snap_value(snap, "stream-end-grace-seconds")
+    if grace_raw:
+        try:
+            stream_end_grace_seconds = max(
+                platforms.STREAM_END_GRACE_MIN,
+                min(platforms.STREAM_END_GRACE_MAX, int(grace_raw)),
+            )
+        except ValueError:
+            pass
 
     oauth = {
         "google_app": bool(google_client_id and google_client_secret),
@@ -714,6 +725,9 @@ def index():
         facebook_app_secret_masked=mask(facebook_app_secret),
         facebook_config_id_set=bool(facebook_config_id),
         facebook_config_id_masked=mask(facebook_config_id),
+        stream_end_grace_seconds=stream_end_grace_seconds,
+        stream_end_grace_min=platforms.STREAM_END_GRACE_MIN,
+        stream_end_grace_max=platforms.STREAM_END_GRACE_MAX,
     )
 
 @app.get("/history")
@@ -1247,6 +1261,40 @@ def save_oauth_credentials():
     except Exception as exc:  # noqa: BLE001
         flash(f"Could not save credentials: {exc}", "error")
     return redirect(url_for("index"))
+
+@app.post("/stream-end-grace")
+@owner_required
+def save_stream_end_grace():
+    """How long to wait after Zoom goes idle before completing YT/FB lives."""
+    raw = (request.form.get("stream_end_grace_seconds") or "").strip()
+    try:
+        seconds = int(raw)
+    except ValueError:
+        flash("Enter the grace period as a whole number of seconds.", "error")
+        return redirect(url_for("index"))
+    if not (
+        platforms.STREAM_END_GRACE_MIN
+        <= seconds
+        <= platforms.STREAM_END_GRACE_MAX
+    ):
+        flash(
+            f"Grace period must be between {platforms.STREAM_END_GRACE_MIN} and "
+            f"{platforms.STREAM_END_GRACE_MAX} seconds.",
+            "error",
+        )
+        return redirect(url_for("index"))
+    try:
+        set_secrets({"stream-end-grace-seconds": str(seconds)})
+        keyvault.invalidate("stream-end-grace-seconds")
+        flash(
+            f"Stream-end grace period saved: {seconds} seconds. "
+            "YouTube/Facebook lives complete only if Zoom stays idle that long.",
+            "ok",
+        )
+    except Exception as exc:  # noqa: BLE001
+        flash(f"Could not save grace period: {exc}", "error")
+    return redirect(url_for("index"))
+
 
 @app.post("/email/credentials")
 @owner_required

@@ -50,6 +50,7 @@ _STABLE_SECRETS = frozenset(
         "ui-pin-hash",
         "ui-owner-pin-hash",
         "ingest-stream-key",
+        "stream-end-grace-seconds",
     }
 )
 

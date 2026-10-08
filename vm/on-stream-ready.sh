@@ -28,6 +28,9 @@ printf '%s\n' "$PATH_NAME" > "${RUN_DIR}/current-path"
 date -u +%Y%m%dT%H%M%SZ > "${RUN_DIR}/current-session"
 chmod 600 "${RUN_DIR}/current-path" "${RUN_DIR}/current-session"
 
+# Zoom is back — do not complete YT/FB from a brief earlier blip.
+/opt/multistream/bin/cancel-stream-end.sh || true
+
 # If Prepare live was skipped, mint YT/FB lives with the default title now.
 # Failures are logged but must not block the Zoom ingest path itself.
 if ! /opt/multistream/ui/.venv/bin/python /opt/multistream/bin/auto-prepare-live.py; then

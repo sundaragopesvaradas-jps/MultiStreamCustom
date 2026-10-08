@@ -229,16 +229,31 @@ def _youtube_access_token(get_secret: GetSecret, set_secret: SetSecret) -> str:
     if not client_id or not client_secret or not refresh:
         raise PlatformError("YouTube OAuth tokens incomplete — reconnect YouTube.")
 
-    refreshed = _http_json(
-        "POST",
-        YT_TOKEN,
-        form={
-            "client_id": client_id,
-            "client_secret": client_secret,
-            "refresh_token": refresh,
-            "grant_type": "refresh_token",
-        },
-    )
+    try:
+        refreshed = _http_json(
+            "POST",
+            YT_TOKEN,
+            form={
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "refresh_token": refresh,
+                "grant_type": "refresh_token",
+            },
+        )
+    except PlatformError as exc:
+        # invalid_grant means the stored refresh token is dead: revoked, or
+        # (most commonly) the Google OAuth consent screen is still in "Testing"
+        # mode, where refresh tokens expire after 7 days. Clear the bad token
+        # and surface an actionable message instead of the raw 400.
+        if "invalid_grant" in str(exc):
+            set_secret("youtube-oauth-tokens", "")
+            raise PlatformError(
+                "YouTube sign-in has expired (invalid_grant). Reconnect YouTube "
+                "via Connect YouTube. If this keeps happening every ~7 days, set "
+                "the Google OAuth consent screen to 'Published/In production' "
+                "(Testing-mode refresh tokens expire after 7 days)."
+            ) from exc
+        raise
     tokens["access_token"] = refreshed["access_token"]
     tokens["expires_in"] = refreshed.get("expires_in", 3600)
     tokens["obtained_at"] = int(time.time())
@@ -274,7 +289,9 @@ def youtube_prepare_live(
             },
             "contentDetails": {
                 "enableAutoStart": True,
-                "enableAutoStop": True,
+                # False: a brief RTMP blip must not permanently complete the live.
+                # We explicitly complete after a grace period when Zoom stays gone.
+                "enableAutoStop": False,
                 "monitorStream": {"enableMonitorStream": False},
             },
         },
@@ -318,6 +335,61 @@ def youtube_prepare_live(
         watch_url=watch_url,
         broadcast_id=broadcast_id,
     )
+
+
+DEFAULT_STREAM_END_GRACE_SECONDS = 30
+STREAM_END_GRACE_MIN = 5
+STREAM_END_GRACE_MAX = 600
+
+
+def stream_end_grace_seconds(get_secret: GetSecret) -> int:
+    """Seconds to wait after Zoom goes idle before completing YT/FB lives."""
+    raw = get_optional(get_secret, "stream-end-grace-seconds")
+    if not raw:
+        return DEFAULT_STREAM_END_GRACE_SECONDS
+    try:
+        value = int(raw)
+    except ValueError:
+        return DEFAULT_STREAM_END_GRACE_SECONDS
+    return max(STREAM_END_GRACE_MIN, min(STREAM_END_GRACE_MAX, value))
+
+
+def youtube_complete_broadcast(get_secret: GetSecret, set_secret: SetSecret) -> str:
+    """Transition the stored YouTube broadcast to complete. Idempotent."""
+    broadcast_id = get_optional(get_secret, "youtube-broadcast-id")
+    if not broadcast_id:
+        return "no YouTube broadcast id"
+    if not get_optional(get_secret, "youtube-oauth-tokens"):
+        return "YouTube not connected"
+    token = _youtube_access_token(get_secret, set_secret)
+    headers = {"Authorization": f"Bearer {token}"}
+    current = _http_json(
+        "GET",
+        f"{YT_API}/liveBroadcasts?part=status&id={urllib.parse.quote(broadcast_id)}",
+        headers=headers,
+    )
+    items = current.get("items") or []
+    if not items:
+        return f"YouTube broadcast {broadcast_id} not found"
+    status = (items[0].get("status") or {}).get("lifeCycleStatus", "")
+    if status in {"complete", "revoked"}:
+        return f"YouTube already {status}"
+    if status not in {"live", "testing", "ready"}:
+        return f"YouTube status {status or 'unknown'} — skip complete"
+    try:
+        _http_json(
+            "POST",
+            f"{YT_API}/liveBroadcasts/transition"
+            f"?broadcastStatus=complete&id={urllib.parse.quote(broadcast_id)}"
+            f"&part=status",
+            headers={**headers, "Content-Length": "0"},
+        )
+    except PlatformError as exc:
+        # Race: already completed between GET and transition.
+        if "invalidTransition" in str(exc) or "liveBroadcastsNotFound" in str(exc):
+            return f"YouTube complete skipped ({exc})"
+        raise
+    return f"YouTube broadcast {broadcast_id} completed"
 
 
 def youtube_broadcast_accepting(get_secret: GetSecret, set_secret: SetSecret) -> DestinationReadiness:
@@ -582,6 +654,40 @@ def facebook_prepare_live(
         watch_url=watch_url,
         broadcast_id=live_id,
     )
+
+
+def facebook_end_live(get_secret: GetSecret) -> str:
+    """End the stored Facebook live video. Idempotent."""
+    live_id = get_optional(get_secret, "facebook-live-id")
+    page_token = get_optional(get_secret, "facebook-page-token")
+    if not live_id or not page_token:
+        return "no Facebook live id"
+    try:
+        detail = _http_json(
+            "GET",
+            f"{_fb_graph(get_secret)}/{live_id}"
+            f"?fields=status&access_token={urllib.parse.quote(page_token)}",
+        )
+    except PlatformError as exc:
+        return f"Facebook status check failed: {exc}"
+    status = str(detail.get("status") or "")
+    if status in {"VOD", "LIVE_STOPPED", "PROCESSING"}:
+        return f"Facebook already {status}"
+    try:
+        _http_json(
+            "POST",
+            f"{_fb_graph(get_secret)}/{live_id}",
+            form={
+                "end_live_video": "true",
+                "access_token": page_token,
+            },
+        )
+    except PlatformError as exc:
+        text = str(exc)
+        if "already" in text.lower() or "LIVE_STOPPED" in text or "VOD" in text:
+            return f"Facebook end skipped ({exc})"
+        raise
+    return f"Facebook live {live_id} ended"
 
 
 def facebook_live_accepting(get_secret: GetSecret) -> DestinationReadiness:
